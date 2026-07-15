@@ -51,6 +51,10 @@ train_df = pd.concat(train_frames, ignore_index = True)
 dev_df = pd.concat(dev_frames, ignore_index = True)
 test_df = pd.concat(test_frames, ignore_index = True)
 
+train_df.to_csv('../data/train.csv', index=False)
+dev_df.to_csv('../data/dev.csv', index=False)
+test_df.to_csv('../data/test.csv', index=False)
+
 
 print(train_df.shape, dev_df.shape, test_df.shape)
 print(train_df['location'].unique())
