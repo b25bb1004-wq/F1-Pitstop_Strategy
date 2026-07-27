@@ -8,10 +8,41 @@ import sys
 fastf1.Cache.enable_cache('../cache')
 os.makedirs('../data', exist_ok=True)
 
+def already_pulled(csv_path, year, round_number):
+    #skip races that are already in the circuit file, so re-runs after a
+    #rate-limit stop don't append the same race again
+    if not os.path.exists(csv_path):
+        return False
+    existing = pd.read_csv(csv_path, usecols=lambda c: c in ('year', 'round_number'), low_memory=False)
+    year_rows = existing[existing['year'] == year]
+    if year_rows.empty:
+        return False
+    if 'round_number' not in year_rows.columns:
+        return True #old-schema file with no round info: treat the year as pulled
+    rounds = pd.to_numeric(year_rows['round_number'], errors='coerce')
+    if rounds.isna().all():
+        return True #round column corrupted for this year (old shifted rows): treat as pulled
+    return (rounds == round_number).any()
+
+def append_matching_schema(laps, csv_path):
+    #files written by older script versions have different columns - appending a
+    #mismatched row count shifts every value left/right and corrupts the tail
+    #columns (this is how the location column got corrupted). Align to the
+    #existing header before appending.
+    if os.path.exists(csv_path):
+        header = pd.read_csv(csv_path, nrows=0).columns
+        laps = laps.reindex(columns=header)
+        laps.to_csv(csv_path, mode='a', header=False, index=False)
+    else:
+        laps.to_csv(csv_path, index=False)
+
 for year in range(2021, 2026):
     schedule = fastf1.get_event_schedule(year)
     race_schedule = schedule[schedule['RoundNumber'] > 0]
-    for round_number in race_schedule['RoundNumber']:
+    for round_number, schedule_location in zip(race_schedule['RoundNumber'], race_schedule['Location']):
+        if already_pulled(f"../data/{schedule_location}.csv", year, round_number):
+            print(f"skipping {year} round {round_number} ({schedule_location}) - already pulled")
+            continue
         try:
             try:
                 race_session = fastf1.get_session(year, round_number, 'R')
@@ -60,9 +91,10 @@ for year in range(2021, 2026):
                 continue 
 
             try:
-                laps['year'] = year                #add year and location to each lap
+                laps['year'] = year                #add year, round and location to each lap
+                laps['round_number'] = round_number
                 laps['location'] = circuit_location
-                laps.to_csv(f"../data/{circuit_location}.csv", mode='a', header=not os.path.exists(f"../data/{circuit_location}.csv"), index=False)   #save laps to csv file
+                append_matching_schema(laps, f"../data/{circuit_location}.csv")   #save laps to csv file
                 time.sleep(4)
             except RateLimitExceededError:
                 print("rate limit exceeded - stopping")

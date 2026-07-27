@@ -2,11 +2,16 @@ import pandas as pd
 import glob
 import os
 import random
+
+random.seed(42) #so the split is reproducible across runs
+
 files = glob.glob('../data/*.csv')
 dfs = []
 for f in files:
-    df = pd.read_csv(f)
     circuit_name = os.path.basename(f).replace('.csv', '')
+    if circuit_name in ('train', 'dev', 'test'):
+        continue
+    df = pd.read_csv(f, low_memory=False)
     df['location'] = circuit_name
     dfs.append(df)
 
@@ -15,6 +20,13 @@ all_data['location'] = all_data['location'].replace({
     'Monte Carlo' : 'Monaco',
     'Miami Gardens' : 'Miami'
 })
+
+#data_pull.py appended the same race again on every re-run after a rate-limit stop,
+#so raw files hold each lap several times - keep one copy of each lap.
+#Time is the session timestamp, so it also separates double-headers (same year + location).
+before = len(all_data)
+all_data = all_data.drop_duplicates(subset=['Time', 'Driver', 'LapNumber', 'year', 'location'])
+print(f"dropped {before - len(all_data)} duplicate laps, {len(all_data)} remain")
 
 train_frames = []
 dev_frames = []
