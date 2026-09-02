@@ -87,15 +87,24 @@ What the numbers mean:
 ## Lessons learned the hard way
 
 The pipeline's history is documented in [`notes/project_summary.md`](notes/project_summary.md),
-including two bugs worth reading about before trusting any append-mode CSV pipeline:
+including bugs worth reading about before trusting any append-mode CSV pipeline:
 
 - **The duplicate-lap bug**: resumable pulls that append unconditionally re-appended every
   cached race on every re-run — 452,968 of 561,225 raw rows were duplicates before the fix,
   and the first round of experiment numbers was built on that inflated data.
-- **The schema-shift bug**: different script versions writing different column sets to the
-  same CSVs silently shifted values across columns (circuit names ending up in
-  `round_number`, NaN locations). Fixed by aligning appends to the existing header and
-  trusting the filename, not the stored column, for circuit identity.
+- **The schema-shift bug, and how much worse it actually was than first thought**:
+  different script versions writing different column sets to the same CSVs silently shifted
+  `location` into `round_number` on every append after the mismatch (or left it blank).
+  `append_matching_schema` in `data_pull.py` stops *new* corruption, but that only prevents
+  the bug from getting worse — it doesn't repair what's already collected, and a later audit
+  found `round_number` was still corrupted in **82% of train rows, 89% of dev, 66% of test**.
+  It was never used as a model feature, so no prior result was built on bad data — but it
+  would have broken silently the moment anything needed a real session identifier (pulling
+  weather from the FastF1 cache, for one). Fixed in `split.py` by re-deriving `round_number`
+  for every row from FastF1's own event schedule, keyed on `(year, location, closest
+  EventDate)` rather than trusted from the file — the date is needed, not just
+  `(year, location)`, because Austria/Spielberg hosted two separate rounds in 2021 alone.
+  See `notes/round_number_bugfix_report.md` for the full diagnosis and verification.
 
 ## Open work
 
