@@ -10,9 +10,10 @@ tried as session-temporary scratch scripts in July. Every enrichment step
 here mirrors that report's methodology; see the report for the reasoning
 behind each choice.
 
-Run from scripts/: `python enrich_data.py`. Takes a few minutes — it loads
-weather for every race in train+dev from the local FastF1 cache (no
-network calls; the cache is already fully populated).
+Run `python clean_data.py` first (this reads its output, not the raw
+train.csv/dev.csv). Run from scripts/: `python enrich_data.py`. Takes a
+few minutes — it loads weather for every race in train+dev from the local
+FastF1 cache (no network calls; the cache is already fully populated).
 """
 import fastf1
 import pandas as pd
@@ -23,8 +24,11 @@ warnings.filterwarnings("ignore")
 fastf1.Cache.enable_cache("../cache")
 fastf1.logger.set_log_level("ERROR")
 
-train_df = pd.read_csv("../data/train.csv", low_memory=False)
-dev_df = pd.read_csv("../data/dev.csv", low_memory=False)
+# Reads the cleaned files (run clean_data.py first) - not the raw
+# train.csv/dev.csv, which still carry dead columns, track-limits-deleted
+# laps with dishonest times, and rows missing Compound/TyreLife.
+train_df = pd.read_csv("../data/train_clean.csv", low_memory=False)
+dev_df = pd.read_csv("../data/dev_clean.csv", low_memory=False)
 print(f"train {train_df.shape}, dev {dev_df.shape}")
 
 

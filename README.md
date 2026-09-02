@@ -16,16 +16,27 @@ predicting it.
 
 ```
 scripts/
-  data_pull.py            # pull every 2021–2025 race from FastF1 into per-circuit CSVs
-  split.py                # dedup + stack the CSVs, split train/dev/test by whole races
-  progress.py             # quick count of how many races have been pulled so far
-  sandstone.py            # telemetry scratch script (FastF1 car-data exploration)
-  Tyre_degradation.ipynb  # the experiments: Ridge → Random Forest → pace-delta target
+  data_pull.py                       # pull every 2021–2025 race from FastF1 into per-circuit CSVs
+  split.py                           # dedup + stack the CSVs, split train/dev/test by whole races,
+                                      #   re-derive round_number from the FastF1 schedule
+  clean_data.py                      # drop dead columns, track-limits-deleted laps, rows missing
+                                      #   Compound/TyreLife; fix sector-time units -> *_clean.csv
+  enrich_data.py                     # real weather, traffic, stint/fuel context, team_pace,
+                                      #   pace-delta target, built on the *_clean.csv base
+  model_enriched_degradation.py      # single shared model (all compounds) on the enriched features
+  model_per_compound_degradation.py  # separate model per tyre compound on the same features
+  progress.py                        # quick count of how many races have been pulled so far
+  sandstone.py                       # telemetry scratch script (FastF1 car-data exploration)
+  Tyre_degradation.ipynb             # the original experiments: Ridge → Random Forest → pace-delta
 notes/
-  project_summary.md               # build history, bugs found and fixed, design decisions
-  linear_regression_experiment.md  # first modeling pass, written up in detail
-  degradation_experiment_report.md # enriched-features + pace-delta follow-up experiment
-data/    (gitignored)     # per-circuit raw CSVs + train/dev/test splits, ~750 MB
+  project_summary.md                   # build history, bugs found and fixed, design decisions
+  linear_regression_experiment.md      # first modeling pass, written up in detail
+  degradation_experiment_report.md     # July's enriched-features + pace-delta experiment (scratch)
+  normalization_experiment_report.md   # feature-scaling ablation (Ridge invariant, RF mildly hurt)
+  round_number_bugfix_report.md        # the round_number column-corruption bug and its fix
+  enriched_degradation_report.md       # enrich_data.py/model_enriched_degradation.py made permanent
+  per_compound_degradation_report.md   # data cleaning + per-compound degradation models
+data/    (gitignored)     # per-circuit raw CSVs + train/dev/test splits (+ *_clean, *_enriched)
 cache/   (gitignored)     # FastF1 HTTP cache, several GB
 ```
 
@@ -35,7 +46,9 @@ cache/   (gitignored)     # FastF1 HTTP cache, several GB
 pip install -r requirements.txt
 cd scripts
 python data_pull.py   # pulls all 2021–2025 races; resumable — rerun after rate-limit stops
-python split.py       # dedups and writes data/train.csv, data/dev.csv, data/test.csv
+python split.py       # dedups, fixes round_number, writes data/train.csv, dev.csv, test.csv
+python clean_data.py  # drops dead columns / bad laps, writes data/*_clean.csv
+python enrich_data.py # weather/traffic/stint features on the cleaned base, writes data/*_enriched.csv
 jupyter lab Tyre_degradation.ipynb
 ```
 
