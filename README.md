@@ -25,6 +25,7 @@ scripts/
                                       #   pace-delta target, built on the *_clean.csv base
   model_enriched_degradation.py      # single shared model (all compounds) on the enriched features
   model_per_compound_degradation.py  # separate model per tyre compound on the same features
+  model_laptime_tyrelife_fuel.py     # explicit LapTime = f(TyreLife, fuel, Compound) equation
   progress.py                        # quick count of how many races have been pulled so far
   sandstone.py                       # telemetry scratch script (FastF1 car-data exploration)
   Tyre_degradation.ipynb             # the original experiments: Ridge → Random Forest → pace-delta
@@ -36,6 +37,7 @@ notes/
   round_number_bugfix_report.md        # the round_number column-corruption bug and its fix
   enriched_degradation_report.md       # enrich_data.py/model_enriched_degradation.py made permanent
   per_compound_degradation_report.md   # data cleaning + per-compound degradation models
+  laptime_tyrelife_fuel_equation.md    # explicit LapTime~TyreLife+fuel+Compound equation per compound
 data/    (gitignored)     # per-circuit raw CSVs + train/dev/test splits (+ *_clean, *_enriched)
 cache/   (gitignored)     # FastF1 HTTP cache, several GB
 ```
