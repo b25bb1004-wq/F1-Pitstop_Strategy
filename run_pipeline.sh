@@ -10,4 +10,5 @@ python -m pitwall.evaluate   # held-out evaluation -> reports/metrics.json
 python -m pitwall.train      # final fit on all seasons -> models/pitwall.pkl
 python -m pitwall.figures    # reports/figures/*.png
 python -m pitwall.report     # reports/RESULTS.md
-python -m pitwall.export_web # dashboard data -> docs/data/*.json
+python -m pitwall.export_web # app data -> web/public/data/*.json
+python -m pitwall.export_tracks # circuit outlines -> web/public/data/tracks.json (needs the cache)

@@ -11,7 +11,15 @@ and evaluates all of it honestly: fitted on 2021-2023, tuned on 2024, tested onc
 
 ![degradation](reports/figures/degradation_curves.png)
 
-**Live dashboard: https://b25bb1004-wq.github.io/F1-Pitstop_Strategy/** (strategy calculator, every 2025 race replayed lap by lap, tyre explorer, full results). The browser runs the same optimiser as the Python package; `tests/test_web_core.py` checks they agree.
+**Live app: https://b25bb1004-wq.github.io/F1-Pitstop_Strategy/** (installable as an app on phone or desktop)
+
+- **Intro:** the five start lights fill as the data loads. The car scans in from an amber hologram, then lights out and launch.
+- **Pit Wall:** set any race state and get the call as team radio. A 3D car in the garage swaps tyres when the call is BOX. You also get 30-model agreement, the optimal strategy strip and the pit window.
+- **Race Theatre:** every 2025 race replayed on the real circuit in 3D, with true elevation from position telemetry. All 20 cars run at their recorded pace. Follow any driver with a chase, helicopter or overview camera, while a timing tower shows the pit-call model's probability against the stops teams actually made.
+- **Tyre Lab:** fuel-corrected degradation by circuit and track temperature, plus measured pit loss for 26 circuits.
+- **Proof:** the full held-out 2025 evaluation and the comparison with published models.
+
+The browser runs the same optimiser as the Python package, and `tests/test_web_core.py` checks they agree.
 
 ## Quick start
 
@@ -111,7 +119,8 @@ cache/ (FastF1, offline)
 
 ```
 pitwall/              the v2 pipeline (above) + cli.py, figures.py, report.py, export_web.py
-docs/                 the dashboard (GitHub Pages): index.html, app.js, pitwall-core.js (optimiser port), DESIGN.md
+web/                  the app (Vite + React + react-three-fiber + GSAP, PWA): src/core/pitwall-core.js is the optimiser
+                      port; DESIGN.md; tools/optimize-car.mjs; deployed to GitHub Pages by .github/workflows/pages.yml
 tests/                pytest: strategy behaviour, physics recovery on synthetic races, JS/Python parity
 models/               pitwall.pkl (final fitted bundle), pitwall_summary.json (readable parameters)
 reports/              RESULTS.md, metrics.json, decision_tuning_dev.csv, figures/
@@ -123,3 +132,9 @@ data/, cache/         gitignored; rebuilt by scripts/data_pull.py (cache) and pi
 ## History
 
 v1 (`scripts/`, July-Sep 2026) built the FastF1 data pipeline and found, through a series of ablations, that an absolute-lap-time Ridge was mostly a circuit lookup. It recovered the first physically sensible degradation numbers with stint- and fuel-aware models. The earlier README concluded that tyre degradation was barely recoverable; the v2 structural model shows that conclusion was wrong. Degradation, fuel and pit loss are all recoverable once base pace is modelled per driver-race and pit/SC laps are kept in the data. See [`notes/pitwall_v2_report.md`](notes/pitwall_v2_report.md) for the full write-up, including three bugs found along the way.
+
+## Credits
+
+- Car model: ["Ferrari F1-75"](https://sketchfab.com/3d-models/ferrari-f1-75-06454e0f23a44fcdabcc7808aee6caf9) by [Sketcher](https://sketchfab.com/sketcher987654321), [CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/). Geometry compressed. Livery, sponsor decals, badges and tyre print removed, and re-liveried in the app. Non-commercial use only.
+- Studio HDRI: [Studio Small 08](https://polyhaven.com/a/studio_small_08), Poly Haven, CC0.
+- Timing, telemetry and circuit positions: [FastF1](https://docs.fastf1.dev/). Not affiliated with Formula 1 or any team.

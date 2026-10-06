@@ -16,7 +16,7 @@ const wrap = (f: number) => (isFinite(f) ? ((f % 1) + 1) % 1 : 0);   // track wi
 
 export function useCircuit(track: Track) {
   return useMemo(() => {
-    const s = track.scale_m, a = track.aspect;
+    const s = track.scale_m || 1000, a = track.aspect || 0.6;
     const pts = track.points.map(([x, y], i) => new THREE.Vector3((x - 0.5) * s, (track.z?.[i] ?? 0) * s * ELEV, -(y - a / 2) * s));
     while (pts.length > 3 && pts[0].distanceTo(pts[pts.length - 1]) < 2) pts.pop();     // closed loop: drop the duplicate end
     const curve = new THREE.CatmullRomCurve3(pts, true, "centripetal");
@@ -98,7 +98,7 @@ function Followed({ feed, curve, livery }: { feed: Feed; curve: THREE.CatmullRom
     if (!c || !g.current) return;
     const u = wrap(c.frac), p = curve.getPointAt(u), t = curve.getTangentAt(u);
     g.current.position.copy(p);
-    g.current.quaternion.slerp(q.setFromUnitVectors(X, t), 0.35);
+    g.current.quaternion.slerp(q.setFromUnitVectors(X, t), 0.7);
     spin.current = c.lapDur > 0 ? Math.min(55, (length / c.lapDur / 0.36) * Math.min((feed.current as any).speed || 0, 1)) : 0;
     g.current.visible = c.visible;
   });
@@ -112,24 +112,36 @@ function Followed({ feed, curve, livery }: { feed: Feed; curve: THREE.CatmullRom
 
 function Cameras({ feed, curve, mode, box }: { feed: Feed; curve: THREE.CatmullRomCurve3; mode: string; box: THREE.Box3 }) {
   const { camera } = useThree();
+  const length = useMemo(() => curve.getLength(), [curve]);
   const look = useRef(new THREE.Vector3());
+  const pos = useRef(new THREE.Vector3());
+  const heading = useRef(new THREE.Vector3(1, 0, 0));
   const tmp = useMemo(() => new THREE.Vector3(), []);
+  const first = useRef(true);
   useFrame(({ clock }, dt) => {
-    if (mode === "overview") return;
+    if (mode === "overview") { first.current = true; return; }
     const c = feed.current.cars.find((x) => x.selected);
     if (!c) return;
-    const u = wrap(c.frac), p = curve.getPointAt(u), t = curve.getTangentAt(u);
-    const k = 1 - Math.pow(0.0015, Math.min(dt, 0.05));
+    const u = wrap(c.frac), p = curve.getPointAt(u);
+    // ride the racing line itself: exact at any playback speed, only lightly smoothed
+    // the curve is already smooth, so positions are exact; only the orbit eases in
+    const k = first.current || mode === "chase" ? 1 : 1 - Math.pow(0.001, Math.min(dt, 0.05));
     if (mode === "chase") {
-      tmp.copy(p).addScaledVector(t, -13).add(new THREE.Vector3(0, 4.2, 0));
-      camera.position.lerp(tmp, k);
-      look.current.lerp(tmp.copy(p).addScaledVector(t, 14).setY(p.y + 1.2), k);
+      // broadcast chase rig on the car's own heading (heading eased so corners swing, not snap)
+      const t = curve.getTangentAt(u);
+      heading.current.lerp(t, first.current ? 1 : 0.25).normalize();
+      const h = heading.current;
+      tmp.copy(p).addScaledVector(h, -12).setY(p.y + 4);
+      pos.current.copy(tmp);
+      look.current.copy(p).addScaledVector(h, 22).setY(p.y + 1);
     } else {
-      const a = clock.elapsedTime * 0.12;
-      tmp.set(p.x + Math.cos(a) * 70, p.y + 45, p.z + Math.sin(a) * 70);
-      camera.position.lerp(tmp, k * 0.6);
+      const a = clock.elapsedTime * 0.1;
+      tmp.set(p.x + Math.cos(a) * 85, p.y + 55, p.z + Math.sin(a) * 85);
+      pos.current.lerp(tmp, k);
       look.current.lerp(p, k);
     }
+    first.current = false;
+    camera.position.copy(pos.current);
     camera.lookAt(look.current);
   });
   return mode === "overview" ? (
@@ -153,7 +165,7 @@ export function CircuitScene({ track, feed, mode, livery }: { track: Track; feed
       <hemisphereLight args={["#ffd9a8", "#05060a", 0.5]} />
       <directionalLight position={[300, 500, 200]} intensity={1.4} />
       <mesh geometry={c.ribbon} receiveShadow>
-        <meshStandardMaterial color="#1b1d24" roughness={0.82} metalness={0.15} />
+        <meshStandardMaterial color="#1d2028" roughness={0.78} metalness={0.2} side={THREE.DoubleSide} />
       </mesh>
       <mesh geometry={c.edgeL}><meshBasicMaterial color="#ffb547" toneMapped={false} /></mesh>
       <mesh geometry={c.edgeR}><meshBasicMaterial color="#ff8a00" toneMapped={false} /></mesh>

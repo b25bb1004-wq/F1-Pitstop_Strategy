@@ -8,7 +8,7 @@ import { Icon, Tyre, useReveal } from "../ui/kit";
 import { CircuitScene, Feed } from "../three/Circuit3D";
 
 const TYRE_NAME: Record<string, string> = { S: "SOFT", M: "MEDIUM", H: "HARD", I: "MEDIUM", W: "MEDIUM" };
-const MODES = [["chase", "Chase cam"], ["heli", "Helicopter"], ["overview", "Overview"]] as const;
+const MODES = [["chase", "Chase"], ["heli", "Heli"], ["overview", "Overview"]] as const;
 
 type State = { d: Driver; D: number; frac: number; lapIdx: number; out: boolean; done: boolean; lapDur: number };
 const SPEEDS = [8, 16, 32, 64, 128];
@@ -76,7 +76,7 @@ export default function Theatre({ data }: { data: Data }) {
   const at = useTrackPath(track.points);
   const [sel, setSel] = useState(prep.drivers[0]?.driver);
   const [playing, setPlaying] = useState(!reducedMotion());
-  const [speed, setSpeed] = useState(32);
+  const [speed, setSpeed] = useState(16);
   const [tick, setTick] = useState(0);
   const [mode, setMode] = useState<string>("chase");
   const T = useRef(0);
@@ -128,6 +128,7 @@ export default function Theatre({ data }: { data: Data }) {
     let raf = 0, last = performance.now(), lastTick = 0;
     const g = canvas.current!.getContext("2d")!;
     const frame = (now: number) => {
+      raf = requestAnimationFrame(frame);       // schedule first: one bad frame must never stop the race
       const dt = Math.min((now - last) / 1000, 0.1); last = now;
       if (live.current.playing) {
         T.current = Math.min(prep.maxT, T.current + dt * live.current.speed);
@@ -136,7 +137,7 @@ export default function Theatre({ data }: { data: Data }) {
       const { s, ox, oy, dpr } = geom.current, asp = track.aspect;
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.clearRect(0, 0, g.canvas.width, g.canvas.height);
-      if (layer.current) g.drawImage(layer.current, 0, 0);
+      if (layer.current && layer.current.width > 0 && layer.current.height > 0) g.drawImage(layer.current, 0, 0);
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       const P = (f: number) => { const p = at(f); return [ox + p[0] * s, oy + (asp - p[1]) * s]; };
       const all = prep.drivers.map((d) => stateAt(d, T.current));
@@ -167,7 +168,6 @@ export default function Theatre({ data }: { data: Data }) {
           g.font = "700 11px Jost"; g.fillStyle = "#fff"; g.fillText(st.d.driver, x + 9, y - 6); }
       }
       if (now - lastTick > 140) { lastTick = now; setTick(T.current); }
-      raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);

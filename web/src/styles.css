@@ -150,7 +150,8 @@ button.chip:hover { color: var(--text); border-color: rgba(255, 181, 71, .5); ba
 /* ---------- race theatre ---------- */
 .stage3d { position: relative; height: min(78vh, 820px); min-height: 520px; overflow: hidden; }
 .stage3d > div:first-child { position: absolute !important; inset: 0; }
-.stage3d .overlay { position: absolute; left: 22px; top: 18px; right: 370px; display: flex; justify-content: space-between; gap: 12px; pointer-events: none; }
+.stage3d .overlay { position: absolute; left: 22px; top: 18px; right: 370px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; pointer-events: none; }
+.stage3d .overlay .modes { align-self: start; grid-auto-rows: 36px; }
 .stage3d .overlay .seg { pointer-events: auto; background: rgba(8, 9, 14, .6); backdrop-filter: blur(14px); }
 .stage3d .overlay .seg button { padding: 0 14px; min-height: 36px; }
 .follow { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 12px; border-radius: 999px; background: rgba(8, 9, 14, .6); border: 1px solid var(--hair); font: 600 13px var(--ui); }
@@ -284,7 +285,11 @@ footer { max-width: 1480px; margin: 0 auto; padding: 30px 22px 50px; color: var(
   .vs-row .track-bar { grid-column: 1 / -1; grid-row: 2; }
   .timeline { grid-template-columns: auto minmax(0, 1fr); }
   .timeline .speed { grid-column: 1 / -1; }
-  .lapcount { font-size: 38px; }
+  .lapcount { font-size: 38px; white-space: nowrap; }
+  .stage3d .overlay { flex-direction: column; gap: 10px; left: 16px; right: 16px; top: 14px; }
+  .stage3d .overlay > div:last-child { justify-items: start !important; }
+  .stage3d .overlay .seg button { padding: 0 12px; font-size: 12px; }
+  .minimap { display: none; }
   footer { padding-bottom: 110px; }
 }
 .pill button .short { display: none; }
