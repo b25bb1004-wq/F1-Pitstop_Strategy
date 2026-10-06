@@ -38,10 +38,16 @@ PRIOR_SD = {
     "fe": 1e3, "off_g": 1e3, "fuel": 1e3,
     "off_circ": 0.35, "off_race": 0.35,
     "deg0": 1.0, "deg": 0.08, "temp": 0.02,
-    "deg_circ": 0.03, "deg_race": 0.03,
+    "deg_circ": 0.03, "deg_race": 0.03, "deg_drv": 0.01,
     "cold": 1.0, "traffic": 1.0, "early": 1.0,
 }
 LOCAL_BLOCKS = ("fe", "off_race", "deg_race")
+
+# In-race calibration, chosen on the 2024 dev season (reports/RESULTS.md):
+# recent laps weighted with a 5-lap half-life (pace drifts with track
+# evolution and race mode), and the race wear-rate deviation held close to
+# the historical curve. Dev in-race MAE 0.777 s -> 0.626 s.
+IN_RACE = {"deg_sd": 0.01, "half_life": 5.0}
 
 
 def age_basis(age):
@@ -63,7 +69,7 @@ def _groups(*arrays):
         yield key, chunk
 
 
-def _columns(df):
+def _columns(df, want_drv=False):
     """Yield (block, key, row_index, values) for every non-zero design entry."""
     n = len(df)
     idx = np.arange(n)
@@ -95,6 +101,10 @@ def _columns(df):
             for key, sub in _groups(k_arr[m]):
                 r = rows[sub]
                 yield k_name, (key, c), r, age[r] * L[r]
+        if want_drv:
+            for key, sub in _groups(race[m], drv[m]):
+                r = rows[sub]
+                yield "deg_drv", (key[0], key[1], c), r, age[r] * L[r]
         cold = m & (df["lap_in_stint"].to_numpy() == 2)
         yield "cold", c, idx[cold], L[cold]
     for g in ("gap1", "gap2"):
@@ -114,7 +124,7 @@ def design(df, registry=None, blocks=None):
     build = registry is None
     registry = {} if build else registry
     rows, cols, vals = [], [], []
-    for block, key, r, v in _columns(df):
+    for block, key, r, v in _columns(df, want_drv=blocks is not None and "deg_drv" in blocks):
         if blocks is not None and block not in blocks:
             continue
         if len(r) == 0:
@@ -141,12 +151,13 @@ def _penalty(registry, sigma):
     return lam
 
 
-def _solve(X, y, lam):
-    A = (X.T @ X).toarray()
+def _solve(X, y, lam, w=None):
+    Xw = X if w is None else X.multiply(w[:, None]).tocsr()
+    A = (Xw.T @ X).toarray()
     A[np.diag_indices_from(A)] += lam
     # numpy, not scipy.linalg.solve(assume_a="pos"): the latter corrupts memory
     # after a few calls on scipy 1.17 / numpy 2.4 (reproducible segfault)
-    return np.linalg.solve(A, X.T @ y)
+    return np.linalg.solve(A, Xw.T @ y)
 
 
 @dataclass
@@ -184,7 +195,7 @@ class Structural:
     def predict_global(self, df):
         return self.predict(df, blocks=[b for b in PRIOR_SD if b not in LOCAL_BLOCKS])
 
-    def fit_local(self, obs, deg_sd=None):
+    def fit_local(self, obs, deg_sd=None, half_life=None, per_driver=False):
         """Re-solve base pace, race compound offsets and race wear rates from
         laps already seen in a race, holding everything else fixed. `deg_sd`
         overrides the prior on the race wear-rate deviation (smaller = trust
@@ -192,13 +203,18 @@ class Structural:
         if len(obs) == 0:
             return {}
         r = obs["LapTime"].to_numpy(float) - self.predict_global(obs)
-        X, reg = design(obs, blocks=LOCAL_BLOCKS)
+        blocks = LOCAL_BLOCKS + (("deg_drv",) if per_driver else ())
+        X, reg = design(obs, blocks=blocks)
         lam = _penalty(reg, self.sigma)
         if deg_sd is not None:
             for (block, _), j in reg.items():
                 if block == "deg_race":
                     lam[j] = self.sigma ** 2 / max(deg_sd, 1e-6) ** 2
-        b = _solve(X, r, lam)
+        w = None
+        if half_life:   # recent laps say more about current pace than old ones
+            lap = obs["LapNumber"].to_numpy(float)
+            w = 0.5 ** ((lap.max() - lap) / half_life)
+        b = _solve(X, r, lam, w)
         return {name: b[j] for name, j in reg.items()}
 
     def predict_with_local(self, df, local):
@@ -206,7 +222,7 @@ class Structural:
         the median base of the field seen so far."""
         pred = self.predict_global(df)
         merged = Structural(dict(local), self.sigma)
-        pred = pred + merged.predict(df, blocks=["off_race", "deg_race"])
+        pred = pred + merged.predict(df, blocks=["off_race", "deg_race", "deg_drv"])
         fe = {k[1]: v for k, v in local.items() if k[0] == "fe"}
         default = np.median(list(fe.values())) if fe else np.nan
         base = np.array([fe.get((r, d), default) for r, d in zip(df["race_id"], df["Driver"])])

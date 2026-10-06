@@ -24,8 +24,8 @@ Generated from `reports/metrics.json` by `python -m pitwall.report`. Protocol: f
 | last_lap | 1.166 | 0.590 | 0.841 | 1.082 | 1.559 | 1.517 |
 | mean_last5 | 1.171 | 0.603 | 0.825 | 1.072 | 1.576 | 1.479 |
 | inrace_linear | 2.747 | 0.587 | 0.925 | 1.610 | 4.927 | 5.315 |
-| structural | 0.777 | 0.501 | 0.590 | 0.703 | 0.996 | 1.203 |
-| structural+gbm | 0.776 | 0.518 | 0.600 | 0.701 | 0.985 | 1.149 |
+| structural | 0.626 | 0.464 | 0.541 | 0.603 | 0.733 | 0.884 |
+| structural+gbm | 0.622 | 0.471 | 0.543 | 0.601 | 0.723 | 0.880 |
 
 **test (109,883 predictions), MAE in seconds**
 
@@ -34,8 +34,8 @@ Generated from `reports/metrics.json` by `python -m pitwall.report`. Protocol: f
 | last_lap | 1.111 | 0.536 | 0.779 | 1.018 | 1.519 | 1.430 |
 | mean_last5 | 1.148 | 0.581 | 0.796 | 1.040 | 1.570 | 1.444 |
 | inrace_linear | 2.549 | 0.607 | 0.947 | 1.565 | 4.508 | 4.671 |
-| structural | 0.748 | 0.491 | 0.594 | 0.707 | 0.931 | 1.087 |
-| structural+gbm | 0.749 | 0.495 | 0.592 | 0.707 | 0.933 | 1.070 |
+| structural | 0.616 | 0.446 | 0.534 | 0.599 | 0.723 | 0.858 |
+| structural+gbm | 0.614 | 0.447 | 0.533 | 0.601 | 0.717 | 0.849 |
 
 Residual booster kept: False (chosen on dev).
 
@@ -55,7 +55,7 @@ Residual booster kept: False (chosen on dev).
 | Pit-loss MAE, per-circuit model | 1.58 s | 1.53 s |
 | Pit-loss MAE, constant 22 s | 2.46 s | 2.16 s |
 | Remaining-race time from lap 10, drivers | 170 | 190 |
-| ... model MAE (MAPE) | 40.4 s (0.96%) | 25.8 s (0.62%) |
+| ... model MAE (MAPE) | 32.4 s (0.76%) | 20.0 s (0.49%) |
 | ... naive pace x laps + 22 s/stop | 64.6 s (1.54%) | 54.3 s (1.32%) |
 
 ## 4. Pit-stop decision backtest (every driver, every mid-stint lap, dry races)
@@ -64,21 +64,21 @@ Residual booster kept: False (chosen on dev).
 
 | Decision model | P | R | F1 (exact lap) | F1 +-1 lap | F1 +-2 laps | first call within 2 laps | median first-call error | SC/VSC balanced acc. | SC/VSC F1 | ROC-AUC |
 |---|---|---|---|---|---|---|---|---|---|---|
-| optimiser_in_race | 0.10 | 0.50 | 0.16 | 0.26 | 0.33 | 22.9% | 15.0 laps | 77.4% | 0.40 | nan |
-| optimiser_pre_race_only | 0.09 | 0.28 | 0.14 | 0.21 | 0.25 | 14.0% | inf laps | 80.2% | 0.51 | nan |
-| imitation_basic | 0.17 | 0.40 | 0.24 | 0.35 | 0.41 | 21.7% | inf laps | 76.2% | 0.50 | 0.868 |
-| imitation_rivals | 0.26 | 0.45 | 0.33 | 0.46 | 0.53 | 31.0% | 11.0 laps | 75.5% | 0.53 | 0.900 |
-| hybrid_optimiser_features | 0.34 | 0.36 | 0.35 | 0.45 | 0.50 | 28.4% | inf laps | 73.3% | 0.54 | 0.892 |
-| leaky_current_lap_time | 0.89 | 0.81 | 0.85 | 0.86 | 0.87 | 78.3% | 0.0 laps | 70.4% | 0.54 | 0.993 |
+| optimiser_in_race | 0.11 | 0.40 | 0.17 | 0.27 | 0.33 | 21.4% | n/a laps | 78.0% | 0.42 | nan |
+| optimiser_pre_race_only | 0.09 | 0.28 | 0.14 | 0.21 | 0.25 | 14.0% | n/a laps | 80.2% | 0.51 | nan |
+| imitation_basic | 0.14 | 0.43 | 0.22 | 0.33 | 0.40 | 19.0% | n/a laps | 81.6% | 0.51 | 0.846 |
+| pit_call_model | 0.26 | 0.42 | 0.32 | 0.44 | 0.51 | 26.5% | 20.0 laps | 69.0% | 0.43 | 0.884 |
+| hybrid_optimiser_features | 0.28 | 0.33 | 0.31 | 0.41 | 0.47 | 22.9% | n/a laps | 65.2% | 0.39 | 0.871 |
+| leaky_current_lap_time | 0.90 | 0.81 | 0.85 | 0.86 | 0.86 | 77.8% | 0.0 laps | 68.8% | 0.53 | 0.992 |
 
 **test: 22,331 lap states, 625 real stops**
 
 | Decision model | P | R | F1 (exact lap) | F1 +-1 lap | F1 +-2 laps | first call within 2 laps | median first-call error | SC/VSC balanced acc. | SC/VSC F1 | ROC-AUC |
 |---|---|---|---|---|---|---|---|---|---|---|
-| optimiser_in_race | 0.09 | 0.52 | 0.15 | 0.24 | 0.31 | 19.4% | 17.5 laps | 68.7% | 0.34 | nan |
-| optimiser_pre_race_only | 0.10 | 0.42 | 0.16 | 0.24 | 0.31 | 16.8% | inf laps | 68.0% | 0.35 | nan |
-| imitation_basic | 0.15 | 0.58 | 0.23 | 0.35 | 0.42 | 25.6% | 11.0 laps | 67.4% | 0.39 | 0.864 |
-| imitation_rivals | 0.19 | 0.57 | 0.29 | 0.40 | 0.48 | 30.4% | 8.0 laps | 74.6% | 0.51 | 0.892 |
-| hybrid_optimiser_features | 0.24 | 0.47 | 0.32 | 0.41 | 0.47 | 29.8% | 15.5 laps | 71.2% | 0.49 | 0.889 |
-| leaky_current_lap_time | 0.88 | 0.81 | 0.84 | 0.85 | 0.86 | 78.0% | 0.0 laps | 70.9% | 0.56 | 0.995 |
+| optimiser_in_race | 0.10 | 0.48 | 0.16 | 0.25 | 0.33 | 19.9% | 22.0 laps | 66.9% | 0.33 | nan |
+| optimiser_pre_race_only | 0.10 | 0.42 | 0.16 | 0.24 | 0.31 | 16.8% | n/a laps | 68.0% | 0.35 | nan |
+| imitation_basic | 0.12 | 0.56 | 0.19 | 0.31 | 0.40 | 20.4% | 13.0 laps | 63.9% | 0.30 | 0.844 |
+| pit_call_model | 0.21 | 0.41 | 0.27 | 0.38 | 0.45 | 24.0% | 28.5 laps | 70.5% | 0.47 | 0.876 |
+| hybrid_optimiser_features | 0.22 | 0.37 | 0.27 | 0.38 | 0.43 | 22.9% | n/a laps | 71.0% | 0.49 | 0.872 |
+| leaky_current_lap_time | 0.90 | 0.79 | 0.84 | 0.85 | 0.85 | 75.3% | 0.0 laps | 66.6% | 0.48 | 0.994 |
 

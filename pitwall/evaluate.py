@@ -25,10 +25,24 @@ from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_sco
 
 from pitwall.config import DEV_YEARS, DRY, REPORT_DIR, TEST_YEARS, TRAIN_YEARS
 from pitwall.pitstops import GREEN, SC, VSC, pit_events, transition_matrix
-from pitwall.strategy import DECISION, RaceState, lap_cost_table, pit_losses, solve
+from pitwall.strategy import RaceState, lap_cost_table, pit_losses, solve
+from pitwall.structural import IN_RACE
 from pitwall.train import fit_bundle, load_features
 
 COMP_CODE = {c: i for i, c in enumerate(DRY)}
+
+
+def finite(obj):
+    """Strict JSON: NaN / inf become null (browsers reject Infinity)."""
+    if isinstance(obj, dict):
+        return {k: finite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [finite(v) for v in obj]
+    if isinstance(obj, (float, np.floating)):
+        return float(obj) if np.isfinite(obj) else None
+    if isinstance(obj, np.integer):
+        return int(obj)
+    return obj
 
 
 def mae(a, b):
@@ -153,7 +167,7 @@ def inrace_predictions(df, model, races, step=5, min_obs=3):
             tgt = tgt[tgt["Driver"].map(counts).fillna(0) >= min_obs]
             if len(obs) < 30 or tgt.empty:
                 continue
-            local = model.fit_local(obs)
+            local = model.fit_local(obs, **IN_RACE)
             g = obs.groupby("Driver")["LapTime"]
             stint_k = obs.groupby("Driver")["Stint"].last()
             f = pd.DataFrame({
@@ -217,7 +231,7 @@ def racetime_eval(df, bundle, eval_years, k=10):
         obs = rep[rep["LapNumber"] <= k]
         if len(obs) < 50:
             continue
-        local = model.fit_local(obs)
+        local = model.fit_local(obs, **IN_RACE)
         pl = tab.get(r["circuit"].iloc[0], tab["_global"])["green"]
         finished = r["FinishStatus"].fillna("").str.match(r"Finished|\+")
         for drv, d in r[finished].groupby("Driver"):
@@ -249,34 +263,78 @@ def racetime_eval(df, bundle, eval_years, k=10):
 
 
 # --------------------------------------------------------------- 4 decisions
-def _rival_context(r):
-    """Information a pit wall has at the start of lap n about lap n-1:
-    how many cars stopped, whether the cars directly ahead/behind stopped,
-    and how much pace this driver has lost since the best lap of the stint."""
+def _rival_context(r, pit_loss):
+    """What a pit wall knows at the start of lap n, all from lap n-1 or earlier:
+    who stopped, the cars directly ahead/behind (gap, tyre age, did they stop),
+    the teammate, where the car would rejoin after a stop, how much of the
+    field has already stopped, and the pace lost since the stint's best lap."""
     r = r.sort_values(["Driver", "LapNumber"])
+    prev = r.groupby("Driver")[["Position", "Time", "age", "gap_ahead", "gap_behind", "stops_before"]].shift()
     stopped = r.groupby("LapNumber")["pit_in"].sum()
-    pos = r.set_index(["LapNumber", "Position"])["Driver"]
+    key = list(zip(r["LapNumber"], r["Position"]))
+    who = dict(zip(key, r["Driver"]))
+    age_at = dict(zip(zip(r["Driver"], r["LapNumber"]), r["age"]))
     pitted = set(zip(r.loc[r["pit_in"], "Driver"], r.loc[r["pit_in"], "LapNumber"]))
-    prev_pos = r.groupby("Driver")["Position"].shift()
-    ahead, behind = [], []
-    for drv, n, p in zip(r["Driver"], r["LapNumber"], prev_pos):
-        a = pos.get((n - 1, p - 1)) if np.isfinite(p) else None
-        b = pos.get((n - 1, p + 1)) if np.isfinite(p) else None
-        ahead.append(float((a, n - 1) in pitted) if isinstance(a, str) else 0.0)
-        behind.append(float((b, n - 1) in pitted) if isinstance(b, str) else 0.0)
+    team_of = dict(zip(r["Driver"], r["Team"]))
+    mates = {d: [o for o in team_of if o != d and team_of[o] == team_of[d]] for d in team_of}
+    times = {n: np.sort(g.dropna().to_numpy()) for n, g in r.groupby("LapNumber")["Time"]}
+    stops_now = r.groupby("LapNumber")["stops_before"].apply(lambda x: x.to_numpy())
+
+    feats = {k: [] for k in ("ahead_stopped_prev", "behind_stopped_prev", "ahead_age_diff",
+                             "behind_age_diff", "mate_stopped_prev", "rejoin_positions_lost",
+                             "rejoin_gap", "field_stopped_frac")}
+    for drv, n, p, t, a, sb in zip(r["Driver"], r["LapNumber"], prev["Position"], prev["Time"],
+                                   prev["age"], r["stops_before"]):
+        for side, off in (("ahead", -1), ("behind", 1)):
+            o = who.get((n - 1, p + off)) if np.isfinite(p) else None
+            feats[f"{side}_stopped_prev"].append(float((o, n - 1) in pitted) if o else 0.0)
+            oa = age_at.get((o, n - 1)) if o else None
+            feats[f"{side}_age_diff"].append(oa - a if oa is not None and np.isfinite(a) else 0.0)
+        feats["mate_stopped_prev"].append(float(any((m, n - 1) in pitted for m in mates[drv])))
+        ts = times.get(n - 1)
+        if ts is not None and np.isfinite(t) and len(ts) > 1:
+            lost = np.searchsorted(ts, t + pit_loss) - np.searchsorted(ts, t, side="right")
+            gaps = np.abs(ts - (t + pit_loss))
+            feats["rejoin_positions_lost"].append(float(lost))
+            feats["rejoin_gap"].append(float(np.min(gaps[ts != t])) if (ts != t).any() else 99.0)
+        else:
+            feats["rejoin_positions_lost"].append(np.nan)
+            feats["rejoin_gap"].append(np.nan)
+        others = stops_now.get(n, np.array([]))
+        feats["field_stopped_frac"].append(float(np.mean(others > sb)) if len(others) > 1 else 0.0)
     lt = r["LapTime"].where(r["rep"])
     grp = [r["Driver"], r["Stint"]]
-    best = lt.groupby(grp).transform(lambda s: s.shift().expanding().min())
-    last3 = lt.groupby(grp).transform(lambda s: s.shift().rolling(3, 1).mean())
-    return pd.DataFrame({
-        "cars_stopped_prev": r["LapNumber"].map(lambda n: stopped.get(n - 1, 0)).values,
-        "ahead_stopped_prev": ahead, "behind_stopped_prev": behind,
-        "pace_drop": (last3 - best).values,
-        "gap_behind_prev": r.groupby("Driver")["gap_behind"].shift().values,
-    }, index=r.index)
+    best = lt.groupby(grp).transform(lambda x: x.shift().expanding().min())
+    last3 = lt.groupby(grp).transform(lambda x: x.shift().rolling(3, 1).mean())
+    out = pd.DataFrame(feats, index=r.index)
+    out["cars_stopped_prev"] = r["LapNumber"].map(lambda n: stopped.get(n - 1, 0)).values
+    out["pace_drop"] = (last3 - best).values
+    out["gap_ahead_prev"] = prev["gap_ahead"].fillna(99.0).values
+    out["gap_behind_prev"] = prev["gap_behind"].fillna(99.0).values
+    out["position_prev"] = prev["Position"].values
+    return out
 
 
-def decision_rows(df, bundle, races, in_race=True, deg_sd=DECISION["local_deg_sd"], sc_ratio=None):
+def plan_features(pol, n, N, c, a, f, s, A):
+    """Follow the optimal policy forward (green running after now): laps until
+    the planned stop and number of stops still planned."""
+    c, a, f, s = c.copy(), a.copy(), f.copy(), s.copy()
+    next_stop = np.full(len(c), 99.0)
+    stops = np.zeros(len(c))
+    for m in range(n, N + 1):
+        act = pol[m][0][c, a, f, s]
+        pit = act >= 0
+        first = pit & (next_stop == 99.0)
+        next_stop[first] = m - n
+        stops += pit
+        f = np.where(pit & (act != c), 1, f)
+        c = np.where(pit, act, c)
+        a = np.where(pit, 0, np.minimum(a + 1, A))
+        s = np.zeros_like(s)
+    return next_stop, stops
+
+
+def decision_rows(df, bundle, races, in_race=True, local_args=None, sc_ratio=None):
     """One row per (driver, lap) mid-stint state with the optimiser's call."""
     model, tables = bundle["model"], bundle["tables"]
     out = []
@@ -290,7 +348,8 @@ def decision_rows(df, bundle, races, in_race=True, deg_sd=DECISION["local_deg_sd
         nxt_out = r.groupby("Driver")["pit_out"].shift(-1).fillna(False).astype(bool)
         r = r.assign(real_stop=r["pit_in"] & nxt_out,
                      retire=r["pit_in"] & ~nxt_out)
-        r = r.join(_rival_context(r))
+        PL = pit_losses(tables, circ)
+        r = r.join(_rival_context(r, PL[0]))
         cand = r[(r["LapNumber"] >= 2) & (r["LapNumber"] <= N - 1) & ~r["pit_out"] & ~r["red"]
                  & r["Compound"].isin(DRY) & ~r["retire"]]
         PL = pit_losses(tables, circ)
@@ -306,7 +365,7 @@ def decision_rows(df, bundle, races, in_race=True, deg_sd=DECISION["local_deg_sd
             n = int(n)
             if in_race:
                 obs = rep[rep["LapNumber"] < n]
-                local = model.fit_local(obs, deg_sd) if len(obs) >= 30 else {}
+                local = model.fit_local(obs, **(local_args or IN_RACE)) if len(obs) >= 30 else {}
                 st = RaceState(circ, n, N, "MEDIUM", 0, False, track_temp=temp, L=L,
                                race_id=rid, local=local)
                 T = lap_cost_table(model, tables, st, N + 45)
@@ -319,6 +378,7 @@ def decision_rows(df, bundle, races, in_race=True, deg_sd=DECISION["local_deg_sd
             a = np.clip(lap["age"].to_numpy() - 1, 0, N + 44).astype(int)
             f = lap["two_compounds"].to_numpy().astype(int)
             s = np.where(lap["sc"], SC, np.where(lap["vsc"], VSC, GREEN))
+            to_plan, n_plan = plan_features(pol, n, N, c, a, f, s, N + 45)
             out.append(pd.DataFrame({
                 "race_id": rid, "year": lap["year"].values, "circuit": circ, "Driver": lap["Driver"].values,
                 "lap": n, "Stint": lap["Stint"].values, "y": lap["real_stop"].values.astype(int),
@@ -327,14 +387,15 @@ def decision_rows(df, bundle, races, in_race=True, deg_sd=DECISION["local_deg_sd
                 "dp_gain_pre": stay0[c, a, f, s] - pit0[c, a, f, s],
                 "age": lap["age"].values, "comp": c, "lap_frac": n / N, "laps_left": N - n,
                 "stops_before": lap["stops_before"].values, "two_compounds": f, "status": s,
-                "Position": lap["Position"].values, "gap_ahead": lap["gap_ahead"].values,
+                "position_prev": lap["position_prev"].values, "gap_ahead_prev": lap["gap_ahead_prev"].values,
                 "pit_loss": PL[0], "race_laps": N, "TrackTemp": lap["TrackTemp"].values,
-                "age_ratio": lap["age"].values / tables["max_age"].get(
-                    f"{circ}|MEDIUM", tables["max_age"]["_global|MEDIUM"]),
-                "cars_stopped_prev": lap["cars_stopped_prev"].values,
-                "ahead_stopped_prev": lap["ahead_stopped_prev"].values,
-                "behind_stopped_prev": lap["behind_stopped_prev"].values,
-                "pace_drop": lap["pace_drop"].values, "gap_behind_prev": lap["gap_behind_prev"].values,
+                "age_ratio": lap["age"].values / np.array([tables["max_age"].get(
+                    f"{circ}|{x}", tables["max_age"][f"_global|{x}"]) for x in lap["Compound"]]),
+                "laps_to_plan": to_plan, "plan_stops": n_plan,
+                **{k: lap[k].values for k in ("cars_stopped_prev", "ahead_stopped_prev", "behind_stopped_prev",
+                                               "ahead_age_diff", "behind_age_diff", "mate_stopped_prev",
+                                               "rejoin_positions_lost", "rejoin_gap", "field_stopped_frac",
+                                               "pace_drop", "gap_behind_prev")},
                 # current-lap time vs the driver's previous lap: only known after the lap
                 # is complete, and an in-lap is slow *because* the car is pitting
                 "lap_delta_leaky": (lap["LapTime"] - lap.index.map(
@@ -343,12 +404,37 @@ def decision_rows(df, bundle, races, in_race=True, deg_sd=DECISION["local_deg_sd
     return pd.concat(out, ignore_index=True)
 
 
+def add_field_context(d):
+    """Field-level context from earlier laps: tyre age vs the field, how many
+    cars stopped in each of the last 3 laps, stops by cars within 3 places in
+    the last 2 laps, and the share of cars on the same compound already stopped."""
+    d = d.sort_values(["race_id", "lap", "Driver"]).copy()
+    g = d.groupby(["race_id", "lap"])
+    d["field_age_diff"] = d["age"] - g["age"].transform("median")
+    stops = d[d["y"] == 1].groupby(["race_id", "lap"]).size()
+    for k in (1, 2, 3):
+        d[f"stops_lag{k}"] = [stops.get((r, l - k), 0) for r, l in zip(d["race_id"], d["lap"])]
+    d["stops_recent3"] = d["stops_lag1"] + d["stops_lag2"] + d["stops_lag3"]
+    by = d[d["y"] == 1].groupby(["race_id", "lap"])["position_prev"].apply(list).to_dict()
+    d["near_stops2"] = [sum(abs(q - p) <= 3 for k in (1, 2) for q in by.get((r, l - k), [])
+                            if np.isfinite(q) and np.isfinite(p))
+                        for r, l, p in zip(d["race_id"], d["lap"], d["position_prev"])]
+    d["same_comp_frac_stopped"] = d.groupby(["race_id", "lap", "comp"])["stops_before"].transform(
+        lambda x: (x > 0).mean())
+    return d
+
+
+# Only information available before the lap is driven (lap n-1 or earlier),
+# plus the track status during lap n, which the pit wall sees before pit entry.
 BASIC = ["age", "comp", "lap_frac", "laps_left", "stops_before", "two_compounds", "status",
-         "Position", "gap_ahead", "pit_loss", "race_laps", "TrackTemp"]
+         "position_prev", "gap_ahead_prev", "pit_loss", "race_laps", "TrackTemp"]
 RIVALS = ["age_ratio", "cars_stopped_prev", "ahead_stopped_prev", "behind_stopped_prev",
-          "pace_drop", "gap_behind_prev"]
-CONTEXT = BASIC + RIVALS
-HYBRID = CONTEXT + ["dp_gain", "dp_gain_pre", "dp_pit"]
+          "ahead_age_diff", "behind_age_diff", "mate_stopped_prev", "rejoin_positions_lost",
+          "rejoin_gap", "field_stopped_frac", "pace_drop", "gap_behind_prev"]
+FIELD = ["field_age_diff", "stops_lag1", "stops_lag2", "stops_recent3", "near_stops2",
+         "same_comp_frac_stopped"]
+CONTEXT = BASIC + RIVALS + FIELD
+HYBRID = CONTEXT + ["dp_gain", "dp_gain_pre", "dp_pit", "laps_to_plan", "plan_stops"]
 LEAKY = BASIC + ["lap_delta_leaky"]
 
 
@@ -392,6 +478,9 @@ def classify_metrics(rows, pred_col, prob_col=None):
            "f1": float(f1_score(y, p, zero_division=0))}
     if prob_col is not None:
         out["roc_auc"] = float(roc_auc_score(y, rows[prob_col]))
+    if prob_col is not None:
+        from sklearn.metrics import average_precision_score
+        out["average_precision"] = float(average_precision_score(y, rows[prob_col]))
     out["tol1"] = tolerant(rows, pred_col, 1)
     out["tol2"] = tolerant(rows, pred_col, 2)
     out["first_call"] = first_call_error(rows, pred_col)
@@ -408,8 +497,9 @@ def classify_metrics(rows, pred_col, prob_col=None):
 
 
 def fit_classifier(train, feats):
-    clf = HistGradientBoostingClassifier(max_iter=400, learning_rate=0.05, max_leaf_nodes=31,
-                                         class_weight="balanced", random_state=0)
+    # chosen on dev by average precision among 3 configs (balanced / unbalanced / regularised)
+    clf = HistGradientBoostingClassifier(max_iter=800, learning_rate=0.03, max_leaf_nodes=31,
+                                         min_samples_leaf=40, l2_regularization=1.0, random_state=0)
     clf.fit(train[feats], train["y"])
     return clf
 
@@ -463,8 +553,8 @@ def run():
                            "test": racetime_eval(df, b_test, TEST_YEARS)}
 
     print("[4/4] pit decision backtest (optimiser per lap; takes a few minutes)")
-    d_dev = decision_rows(df, b_dev, rid(TRAIN_YEARS + DEV_YEARS))
-    d_test = decision_rows(df, b_test, rid(TRAIN_YEARS + DEV_YEARS + TEST_YEARS))
+    d_dev = add_field_context(decision_rows(df, b_dev, rid(TRAIN_YEARS + DEV_YEARS)))
+    d_test = add_field_context(decision_rows(df, b_test, rid(TRAIN_YEARS + DEV_YEARS + TEST_YEARS)))
     d_test.to_parquet(REPORT_DIR / "decisions_test.parquet")
     dec = {}
     tr_dev, ev_dev = d_dev[d_dev["year"].isin(TRAIN_YEARS)], d_dev[d_dev["year"].isin(DEV_YEARS)]
@@ -475,7 +565,7 @@ def run():
                "optimiser_in_race": classify_metrics(ev, "dp_pit")}
         ev["dp_pit_pre"] = (ev["dp_gain_pre"] > 0).astype(int)
         res["optimiser_pre_race_only"] = classify_metrics(ev, "dp_pit_pre")
-        for name, feats in (("imitation_basic", BASIC), ("imitation_rivals", CONTEXT),
+        for name, feats in (("imitation_basic", BASIC), ("pit_call_model", CONTEXT),
                             ("hybrid_optimiser_features", HYBRID), ("leaky_current_lap_time", LEAKY)):
             clf = fit_classifier(tr, feats)
             prob_tr = clf.predict_proba(tr[feats])[:, 1]
@@ -495,7 +585,7 @@ def run():
     report["runtime_s"] = round(time.time() - t0, 1)
     REPORT_DIR.mkdir(exist_ok=True)
     with open(REPORT_DIR / "metrics.json", "w") as fh:
-        json.dump(report, fh, indent=1, default=float)
+        json.dump(finite(report), fh, indent=1, allow_nan=False)
     print(f"wrote reports/metrics.json in {report['runtime_s']} s")
     return report
 

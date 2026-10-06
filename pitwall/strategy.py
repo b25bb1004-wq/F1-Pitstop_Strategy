@@ -39,7 +39,7 @@ STATUS = {"green": GREEN, "sc": SC, "vsc": VSC}
 #   the SC is hard to win back on track. The optimiser uses the effective value.
 # - in-race wear-rate updates are shrunk harder than in the historical fit,
 #   so a few noisy early laps cannot trigger an early stop.
-DECISION = {"sc_ratio_eff": 0.5, "local_deg_sd": 0.01}
+DECISION = {"sc_ratio_eff": 0.5}
 
 
 @dataclass

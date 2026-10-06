@@ -108,39 +108,57 @@ pitting under an SC give away track position that time alone does not price.
 
 | | Pitwall | Best baseline |
 |---|---|---|
-| In-race lap time, MAE all horizons | **0.748 s** | 1.111 s (last lap) |
-| In-race, 1-5 laps ahead | **0.491 s** | 0.536 s |
-| In-race, 21+ laps ahead | **0.931 s** | 1.519 s |
+| In-race lap time, MAE all horizons | **0.616 s** | 1.111 s (last lap) |
+| In-race, 1-5 laps ahead | **0.446 s** | 0.536 s |
+| In-race, 21+ laps ahead | **0.723 s** | 1.519 s |
 | Pre-race lap time, MAE | **1.556 s** | 1.708 s (v1 Ridge) |
 | Pit loss MAE | **1.53 s** | 2.16 s (constant) |
-| Remaining-race time from lap 10 | **25.8 s (0.62%)** | 54.3 s (1.32%) |
+| Remaining-race time from lap 10 | **20.0 s (0.49%)** | 54.3 s (1.32%) |
 
 Pit decisions vs teams, 22,331 lap states with 625 real stops:
 
-| Model | P | R | F1 | F1 within 2 laps | ROC-AUC |
-|---|---|---|---|---|---|
-| Optimiser alone | 0.09 | 0.52 | 0.15 | 0.31 | n/a |
-| Imitation, tyre/race state | 0.15 | 0.58 | 0.23 | 0.42 | 0.864 |
-| Imitation + rival context | 0.19 | 0.57 | 0.29 | 0.48 | 0.892 |
-| Hybrid (+ optimiser outputs) | 0.24 | 0.47 | 0.32 | 0.47 | 0.889 |
-| Leaky (current lap time) | 0.88 | 0.81 | 0.84 | 0.86 | 0.995 |
+| Model | P | R | F1 | F1 within 2 laps | PR-AUC | ROC-AUC |
+|---|---|---|---|---|---|---|
+| Optimiser alone | 0.10 | 0.48 | 0.16 | 0.33 | n/a | n/a |
+| Classifier, tyre/race state | 0.12 | 0.56 | 0.19 | 0.40 | 0.182 | 0.844 |
+| Pit-call model (+ rivals, field) | 0.21 | 0.41 | 0.27 | 0.45 | 0.245 | 0.876 |
+| Pit-call model + optimiser outputs | 0.22 | 0.37 | 0.27 | 0.43 | 0.219 | 0.872 |
+| Leaky (current lap time) | 0.90 | 0.79 | 0.84 | 0.85 | 0.911 | 0.994 |
 
 Classifier thresholds were chosen on 2024 and frozen for 2025.
 
+### Second pass (same day): what moved the numbers
+
+- **Recency-weighted in-race calibration.** Weighting laps already driven with a 5-lap half-life,
+  plus the tighter wear prior, took dev in-race MAE from 0.777 s to 0.626 s; on 2025 it took
+  0.748 s to 0.616 s and the remaining-race error from 25.8 s to 20.0 s. Grid on dev: half-life
+  none/30/15/8/5/3/2/1.5 with the wear prior 0.003-0.03. Per-driver wear rates were also tried
+  and gave nothing.
+- **A leak in my own baselines.** `gap_ahead` and `Position` were taken from the end of the
+  current lap, which an in-lap distorts. Switching to lap n-1 values dropped the first hybrid
+  from F1 0.32 to 0.27. The 0.32 in the first write-up was partly the leak.
+- **Rival and field context** (all from lap n-1 or earlier): positions lost if the car stopped
+  now, the gap at the rejoin point, gap and tyre-age difference to the cars ahead and behind,
+  teammate stop, stops by cars within 3 places in the last 2 laps, and the share of the field
+  already stopped. These took the classifier from F1 0.19 to 0.27 and PR-AUC from 0.182 to 0.245.
+  The optimiser's outputs add nothing on top once these are present.
+- **Dashboard** (`docs/`, GitHub Pages) with the optimiser ported to JavaScript and a parity
+  test against Python, plus pytest coverage of strategy behaviour and physics recovery.
+
 ## 7. Comparison with existing models
 
-- **v1 of this repo:** pre-race MAE 1.708 s, now 1.556 s. v1 had no in-race mode, pit loss or
+- **v1 of this repo:** pre-race MAE 1.708 s, now 1.556 s; in-race 0.616 s. v1 had no in-race mode, pit loss or
   decision layer.
 - **Public FastF1 lap-time projects** report 0.29-0.57 s and 0.33-0.37 s MAE. Those numbers
   come from 1-3 races, with laps or stints of the same race in the training set
   (interpolation). Their approach (a linear model on the race's own laps) re-implemented as a
-  forecaster over all 2025 races scores 2.549 s. Pitwall forecasts 1-5 laps ahead at 0.491 s
+  forecaster over all 2025 races scores 2.549 s. Pitwall forecasts 1-5 laps ahead at 0.446 s
   over an unseen season.
 - **Bi-LSTM pit predictor (Frontiers in AI, 2025):** per-lap F1 0.81, ROC-AUC 0.988, on the
-  last 8 races of 2024. Pitwall's classifier reaches the same level (0.84 / 0.995) only when
+  last 8 races of 2024. Pitwall's classifier reaches the same level (0.84 / 0.994) only when
   given the current lap's time: an in-lap is slow because the car is entering the pits, so
   the "prediction" reads the stop off the lap itself. Restricted to information available
-  before the lap, the best model scores 0.32 / 0.889. I have not verified that the paper's
+  before the lap, the best model scores 0.27 / 0.876. I have not verified that the paper's
   features include the lap time, so this explanation is [Likely], not proven.
 - **Virtual Strategy Engineer (Heilmeier et al., 2020):** neural networks trained to imitate
   team pit decisions inside a race simulator. Pitwall separates the two concerns instead: an

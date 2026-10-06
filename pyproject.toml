@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pitwall"
+version = "2.0.0"
+description = "F1 lap-time prediction, tyre degradation and pit-stop decision engine (FastF1, 2021-2025)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Arnav Yadav" }]
+dependencies = ["numpy>=1.26", "pandas>=2.0", "scipy>=1.11", "scikit-learn>=1.5", "pyarrow>=14",
+                "matplotlib>=3.8", "fastf1>=3.8"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+pitwall = "pitwall.cli:main"
+
+[tool.setuptools]
+packages = ["pitwall"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

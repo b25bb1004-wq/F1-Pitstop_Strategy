@@ -5,7 +5,7 @@ Grid: in-race wear-rate prior (None = no in-race updates) x effective SC stop
 cost (fraction of a green stop) x decision margin. Objective: mean of
 F1 within +-2 laps, first pit call within 2 laps of the real stop, and SC/VSC
 balanced accuracy. Writes reports/decision_tuning_dev.csv; the chosen values
-live in pitwall.strategy.DECISION.
+live in pitwall.strategy.DECISION (SC cost) and pitwall.structural.IN_RACE.
 """
 import itertools
 
@@ -14,6 +14,7 @@ import pandas as pd
 
 import pitwall.evaluate as E
 from pitwall.config import DEV_YEARS, REPORT_DIR, TRAIN_YEARS
+from pitwall.structural import IN_RACE
 from pitwall.train import fit_bundle, load_features
 
 
@@ -23,7 +24,8 @@ def main():
     dev = sorted(df[df["year"].isin(DEV_YEARS)]["race_id"].unique())
     res = []
     for deg_sd, sc in itertools.product([None, 0.01, 0.005, 0.0025], [0.1, 0.3, 0.5, 0.7]):
-        rows = E.decision_rows(df, b, dev, in_race=deg_sd is not None, deg_sd=deg_sd, sc_ratio=sc)
+        local_args = {"deg_sd": deg_sd, "half_life": IN_RACE["half_life"]}
+        rows = E.decision_rows(df, b, dev, in_race=deg_sd is not None, local_args=local_args, sc_ratio=sc)
         for margin in [0, 0.5, 1, 2, 3, 4]:
             rows["call"] = (rows["dp_gain"] > margin).astype(int)
             m = E.classify_metrics(rows, "call")

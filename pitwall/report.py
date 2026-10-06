@@ -6,11 +6,13 @@ from pitwall.config import REPORT_DIR
 
 
 def f(x, nd=3):
+    if x is None:
+        return "n/a"
     return f"{x:.{nd}f}" if isinstance(x, (int, float)) else str(x)
 
 
 def pct(x):
-    return f"{100 * x:.1f}%"
+    return "n/a" if x is None or x != x else f"{100 * x:.1f}%"
 
 
 def main():
@@ -74,7 +76,7 @@ def main():
         w("| Decision model | P | R | F1 (exact lap) | F1 +-1 lap | F1 +-2 laps | first call within 2 laps | "
           "median first-call error | SC/VSC balanced acc. | SC/VSC F1 | ROC-AUC |")
         w("|---|---|---|---|---|---|---|---|---|---|---|")
-        for k in ("optimiser_in_race", "optimiser_pre_race_only", "imitation_basic", "imitation_rivals",
+        for k in ("optimiser_in_race", "optimiser_pre_race_only", "imitation_basic", "pit_call_model",
                   "hybrid_optimiser_features", "leaky_current_lap_time"):
             r = d[k]
             fc = r["first_call"]
