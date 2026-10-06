@@ -135,6 +135,7 @@ v1 (`scripts/`, July-Sep 2026) built the FastF1 data pipeline and found, through
 
 ## Credits
 
+- Frontend: the web app in `web/` (UI, 3D scenes, motion) was built with [Claude Code](https://claude.com/claude-code).
 - Car model: ["Ferrari F1-75"](https://sketchfab.com/3d-models/ferrari-f1-75-06454e0f23a44fcdabcc7808aee6caf9) by [Sketcher](https://sketchfab.com/sketcher987654321), [CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/). Geometry compressed. Livery, sponsor decals, badges and tyre print removed, and re-liveried in the app. Non-commercial use only.
 - Studio HDRI: [Studio Small 08](https://polyhaven.com/a/studio_small_08), Poly Haven, CC0.
 - Timing, telemetry and circuit positions: [FastF1](https://docs.fastf1.dev/). Not affiliated with Formula 1 or any team.

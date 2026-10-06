@@ -1,5 +1,7 @@
 # Pitwall app: design direction
 
+The frontend in `web/` was built with [Claude Code](https://claude.com/claude-code).
+
 Built with the ui-ux-pro-max skill (design-system pass with variance 9, motion 9, density 5), the
 frontend-design-direction checklist, and the operator's own taste on record: Three.js 3D, dark space with an
 amber glow (portfolio "The Pilot"), Apple-grade polish with Futura-style type (MakerBhawan), F1 and aerospace.
