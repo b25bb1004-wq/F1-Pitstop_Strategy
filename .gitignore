@@ -8,3 +8,5 @@ __pycache__/
 .ipynb_checkpoints/
 reports/*.parquet
 reports/*.log
+web/node_modules/
+web/dist/

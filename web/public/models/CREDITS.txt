@@ -1,0 +1,9 @@
+Car model
+  "Ferrari F1-75" by Sketcher (https://sketchfab.com/sketcher987654321)
+  Source: https://sketchfab.com/3d-models/ferrari-f1-75-06454e0f23a44fcdabcc7808aee6caf9
+  License: CC-BY-NC-4.0 (http://creativecommons.org/licenses/by-nc/4.0/)
+  Changes: geometry simplified and compressed; livery, sponsor decals, steering-wheel badges and
+  tyre sidewall print removed; re-liveried at runtime with non-branded materials. Non-commercial use only.
+
+Studio HDRI
+  "Studio Small 08" by Poly Haven (https://polyhaven.com/a/studio_small_08), CC0.

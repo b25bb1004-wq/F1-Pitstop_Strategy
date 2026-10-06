@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Export the data behind the Pitwall web dashboard (docs/, served by GitHub Pages).
+"""Export the data behind the Pitwall web app (web/, deployed to GitHub Pages by Actions).
 
-docs/data/model.json   physics of the final model per circuit (the browser runs the
+web/public/data/model.json   physics of the final model per circuit (the browser runs the
                        same dynamic programme as pitwall.strategy)
-docs/data/races.json   every 2025 test race, lap by lap: actual time, the model's
+web/public/data/races.json   every 2025 test race, lap by lap: actual time, the model's
                        one-lap-ahead prediction (calibrated only on earlier laps),
                        tyres, track status, the optimiser's pit-now advantage, the
                        hybrid classifier's pit probability, and the real stops
-docs/data/metrics.json headline evaluation numbers
+web/public/data/metrics.json headline evaluation numbers
 """
 import json
 import pickle
@@ -22,7 +22,7 @@ from pitwall.strategy import CLIFF, DECISION
 from pitwall.structural import IN_RACE, KNOTS
 from pitwall.train import fit_bundle, load_features
 
-WEB = ROOT / "docs" / "data"
+WEB = ROOT / "web" / "public" / "data"
 
 
 def r(x, nd=3):
@@ -82,6 +82,7 @@ def races_json(df, bundle):
                 continue
             local = model.fit_local(obs, **IN_RACE)
             pred.loc[lap.index] = model.predict_with_local(lap, local)
+        t0 = race.loc[race["LapNumber"] == 1, "LapStartTime"].min()
         drivers = []
         finish = race.groupby("Driver")["ClassifiedPosition"].first()
         for drv, d in race.groupby("Driver"):
@@ -97,6 +98,8 @@ def races_json(df, bundle):
                     r(sc["dp_gain"], 2) if sc is not None else None,
                     r(sc["p_pit_call_model"], 3) if sc is not None else None,
                     int(sc["c_pit_call_model"]) if sc is not None else None,
+                    r(row["Time"] - t0, 2) if np.isfinite(row["Time"]) else None,
+                    int(row["Position"]) if np.isfinite(row["Position"]) else None,
                 ])
             drivers.append({"driver": drv, "team": d["Team"].iloc[0], "finish": str(finish.get(drv, "")),
                             "laps": laps})
@@ -104,7 +107,7 @@ def races_json(df, bundle):
         out.append({"race_id": rid, "event": race["event_name"].iloc[0] if "event_name" in race else rid,
                     "circuit": race["circuit"].iloc[0], "laps": int(race["race_laps"].iloc[0]),
                     "drivers": drivers})
-    return {"fields": ["lap", "time", "pred", "tyre", "age", "status", "pit", "rep", "gain", "p_call", "call"],
+    return {"fields": ["lap", "time", "pred", "tyre", "age", "status", "pit", "rep", "gain", "p_call", "call", "t", "pos"],
             "races": out}
 
 
