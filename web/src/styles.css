@@ -156,6 +156,14 @@ button.chip:active, .btn:active, .seg button:active { transform: scale(.97); }
 .hot .card b { font: 700 12px var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--text); }
 .hot .card span { font: 500 11px var(--mono); color: var(--text-2); }
 @keyframes card-in { from { opacity: 0; transform: translate(-50%, 4px); } }
+.corner-tag { display: grid; grid-template-columns: auto auto; column-gap: 12px; align-items: center; justify-content: start; width: max-content; margin-top: 10px;
+  padding: 6px 14px 6px 0; background: rgba(11, 11, 16, .84); border-left: 3px solid var(--red); animation: tag-in 220ms ease-out; }
+.corner-tag b { grid-row: span 2; padding-left: 11px; font: 800 italic 30px/1 var(--display); color: #fff; font-variant-numeric: tabular-nums; }
+.corner-tag span { font: 700 12px var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--text); }
+.corner-tag small { font: 500 11px var(--mono); color: var(--text-2); }
+.lapcount { position: relative; }
+.lapcount .corner-tag, .hud-tl .corner-tag { position: absolute; top: calc(100% + 4px); left: 0; }
+@keyframes tag-in { from { opacity: 0; transform: translateX(-10px); } }
 .speckey { position: absolute; top: 16px; left: 18px; z-index: 12; display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
 .speckey li { display: flex; align-items: center; gap: 9px; padding: 3px 10px 3px 0; font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-3); cursor: default; transition: color 150ms ease-out; }

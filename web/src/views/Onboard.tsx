@@ -10,9 +10,10 @@ import { useReveal } from "../ui/kit";
 import LineChart from "../charts/LineChart";
 import { DPR, FX, Safe3D } from "../ui/safety";
 import { emit } from "../guide/bus";
+import CornerTag from "../ui/CornerTag";
 import { Atmosphere, Cameras, CarState, Circuit, Feed, FollowCar, TrackMesh, useCircuit, wrap } from "../three/Circuit3D";
 
-const MODES = [["tcam", "T-cam"], ["chase", "Chase"], ["tv", "TV"]] as const;
+const MODES = [["tcam", "T-cam"], ["director", "Director"], ["chase", "Chase"], ["tv", "TV"]] as const;
 const RATES = [0.25, 0.5, 1, 2];
 // single-hue sequential ramp for speed (dark -> F1 red -> pale)
 const ramp = (v: number) => {
@@ -126,6 +127,7 @@ export default function Onboard({ data }: { data: Data }) {
           <div style={{ pointerEvents: "auto", marginTop: 12 }} className="seg modes" role="group" aria-label="Camera">
             {MODES.map(([k, l]) => <button key={k} aria-pressed={mode === k} onClick={() => { setMode(k); emit("onboard:mode", k); }}>{l}</button>)}
           </div>
+          <CornerTag corner={feed.current.corner} />
         </div>
         <div className="hud hud-br" data-explain="hud">
           <div className="pedals" aria-label={`Throttle ${thr}%, brake ${brk ? "on" : "off"}`}>

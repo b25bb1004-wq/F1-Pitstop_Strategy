@@ -9,9 +9,10 @@ import { Icon, Tyre, useReveal } from "../ui/kit";
 import { CircuitScene, Feed } from "../three/Circuit3D";
 import { DPR, FX, Safe3D } from "../ui/safety";
 import { emit } from "../guide/bus";
+import CornerTag from "../ui/CornerTag";
 
 const TYRE_NAME: Record<string, string> = { S: "SOFT", M: "MEDIUM", H: "HARD", I: "MEDIUM", W: "MEDIUM" };
-const MODES = [["chase", "Chase"], ["tv", "TV"], ["heli", "Heli"], ["overview", "Overview"]] as const;
+const MODES = [["director", "Director"], ["chase", "Chase"], ["tv", "TV"], ["heli", "Heli"], ["overview", "Overview"]] as const;
 
 type RDriver = Driver & { tEnd: number[]; last: number; finished: boolean; rank: number };
 type State = { d: RDriver; D: number; frac: number; lapIdx: number; out: boolean; done: boolean; lapDur: number };
@@ -81,9 +82,9 @@ export default function Theatre({ data }: { data: Data }) {
   const ttd = useMemo(() => timeToDistFn((track as any).tel), [track]);
   const [sel, setSel] = useState(prep.drivers[0]?.driver);
   const [playing, setPlaying] = useState(!reducedMotion());
-  const [speed, setSpeed] = useState(8);
+  const [speed, setSpeed] = useState(4);
   const [tick, setTick] = useState(0);
-  const [mode, setMode] = useState<string>("chase");
+  const [mode, setMode] = useState<string>("director");
   const T = useRef(0);
   const feed = useRef({ cars: [], compound: "MEDIUM", speed: 32 }) as Feed;
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -217,7 +218,7 @@ export default function Theatre({ data }: { data: Data }) {
         </Canvas>)}</Safe3D>
         <div className="overlay">
           <div className="lapcount">LAP {leaderLap}<small>/ {race.laps}</small><div className="label" style={{ marginTop: 8 }}>{race.event}</div>
-            <div className="follow"><span className="team" style={{ background: TEAM_COLOR[selD.team] || "#888" }} />{selD.driver} · {selD.team}</div></div>
+            <div className="follow"><span className="team" style={{ background: TEAM_COLOR[selD.team] || "#888" }} />{selD.driver} · {selD.team}</div><CornerTag corner={feed.current.corner} /></div>
           <div style={{ display: "grid", gap: 10, justifyItems: "end" }}>
             <div className="seg modes" role="group" aria-label="Camera">
               {MODES.map(([k, l]) => <button key={k} aria-pressed={mode === k} onClick={() => { setMode(k); emit("theatre:mode", k); }}>{l}</button>)}

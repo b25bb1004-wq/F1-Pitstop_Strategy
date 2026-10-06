@@ -51,9 +51,9 @@ export const STEPS: Step[] = [
   {
     id: "cams", view: "theatre", target: ".modes", title: "Pick your shot",
     body: {
-      rookie: "Chase follows behind the car. TV switches between trackside cameras like on television. Heli flies above.",
-      fan: "Broadcast TV mode hands over between trackside cameras as the car passes. Cars slow for corners because they follow the real speed profile.",
-      engineer: "Cameras ride a smoothed, arc-length-accurate racing line with frame-rate-independent damping. Car speed along the lap is mapped from fastest-lap telemetry.",
+      rookie: "Director films it like television: a trackside camera on every corner, then chase or aerial shots on the straights. Chase, TV and Heli let you pick one camera yourself.",
+      fan: "Director cuts at every braking zone to a long-lens camera on the outside of the corner, with a caption for the apex speed and gear. The front wheels steer and the car brakes where the real driver did.",
+      engineer: "Corners are detected from braking zones in the fastest-lap speed trace (plus curvature for flat-out sweepers). Every rig is a smooth function of a damped, roll-free pose; front-wheel angle is atan(wheelbase x curvature).",
     },
     task: { event: "theatre:mode", value: "tv", text: { rookie: "Try the TV camera.", fan: "Switch to TV.", engineer: "Set camera = TV." } },
   },

@@ -15,7 +15,7 @@ and evaluates all of it honestly: fitted on 2021-2023, tuned on 2024, tested onc
 
 - **Intro:** the five start lights fill as the data loads; the car scans in as a hologram, then lights out.
 - **Pit Wall:** set any race state and get the call as team radio. A real 3D car in the garage swaps tyres when the call is BOX, with numbered spec hotspots (wings, halo, sidepods, power unit, floor, tyres). You also get 30-model agreement, the optimal strategy strip and the pit window.
-- **Race Theatre:** every 2025 race replayed on the real circuit in 3D, with true elevation. All 20 cars run at their recorded pace, from 1x to 128x. Follow any driver with chase, broadcast TV, helicopter or overview cameras, while a timing tower shows the pit-call model's probability against the stops teams actually made.
+- **Race Theatre:** every 2025 race replayed on the real circuit in 3D, with true elevation. All 20 cars run at their recorded pace, from 1x to 128x. Director mode films it like a broadcast: corners are found from braking zones in the real speed trace, a long-lens trackside camera covers each one with a corner caption (apex speed and gear), and the front wheels steer to the real curvature. Chase, TV, helicopter and overview cameras are there too, while a timing tower shows the pit-call model's probability against the stops teams actually made.
 - **Onboard:** the fastest lap at each circuit from real telemetry, in T-cam, chase or TV view, with a speed, gear, shift-light, pedal and DRS HUD and distance-synced traces.
 - **What If:** ask in plain English ("What if Leclerc had followed Pitwall's strategy at Monza?", "What if a Safety Car came out on lap 30 in Bahrain for Norris?"). Pitwall shows what it understood, reruns the race lap by lap, and races the real car against its what-if twin live, with the finishing position, time change, stints, position-by-lap and gap charts. Anything it cannot place is reported rather than guessed.
 - **Tyre Lab:** fuel-corrected degradation by circuit and track temperature, plus measured pit loss for 26 circuits.
@@ -23,6 +23,8 @@ and evaluates all of it honestly: fitted on 2021-2023, tuned on 2024, tested onc
 - **Race engineer:** a personal guide. Pick your level (new to F1, fan, or model builder) and a goal, then take a spotlight tour whose "try it" steps only complete when you do them. Explain mode lets you click anything outlined for an explanation at your level.
 
 The browser runs the same optimiser as the Python package (`tests/test_web_core.py` checks they agree), and `tests/test_whatif.py` runs the What-If engine on real scenarios. **How the models work, in plain terms: [`notes/how_the_model_works.md`](notes/how_the_model_works.md).**
+
+**Presentation:** [`presentation/Pitwall.pptx`](presentation/Pitwall.pptx) ([PDF](presentation/Pitwall.pdf)) tells the story in 20 slides: how it works, how it failed and how it evolved, in the app's F1 theme. See [`presentation/README.md`](presentation/README.md) for the fonts.
 
 ## Quick start
 
@@ -128,6 +130,7 @@ tests/                pytest: strategy behaviour, physics recovery on synthetic 
 models/               pitwall.pkl (final fitted bundle), pitwall_summary.json (readable parameters)
 reports/              RESULTS.md, metrics.json, decision_tuning_dev.csv, figures/
 notes/                how_the_model_works.md (model explainer), pitwall_v2_report.md (v2 write-up), build history
+presentation/         Pitwall.pptx + PDF (20-slide story deck), build_deck.py, assets/, fonts/ (OFL)
 scripts/              v1 pipeline and notebook (kept for history; see notes/)
 data/, cache/         gitignored; rebuilt by scripts/data_pull.py (cache) and pitwall/build.py
 ```

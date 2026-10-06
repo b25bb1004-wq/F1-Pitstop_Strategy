@@ -83,7 +83,7 @@ export default function WhatIf({ data }: { data: Data }) {
   const [changes, setChanges] = useState<Change[]>([]);
   const [missing, setMissing] = useState<string[]>([]);
   const [res, setRes] = useState<Result | null>(null);
-  const [mode, setMode] = useState("chase");
+  const [mode, setMode] = useState("director");
   const [speed, setSpeed] = useState(16);
   const [playing, setPlaying] = useState(false);
   const [tick, setTick] = useState(0);
@@ -232,7 +232,7 @@ export default function WhatIf({ data }: { data: Data }) {
                   <div className="lapcount">LAP {lapNow}<small>/ {res!.race.laps}</small><div className="label" style={{ marginTop: 6 }}>{res!.race.event}</div></div>
                   <div style={{ display: "grid", gap: 10, justifyItems: "end" }}>
                     <div className="seg modes" role="group" aria-label="Camera">
-                      {[["chase", "Chase"], ["tv", "TV"], ["heli", "Heli"]].map(([k, l]) => <button key={k} aria-pressed={mode === k} onClick={() => setMode(k)}>{l}</button>)}
+                      {[["director", "Director"], ["chase", "Chase"], ["tv", "TV"], ["heli", "Heli"]].map(([k, l]) => <button key={k} aria-pressed={mode === k} onClick={() => setMode(k)}>{l}</button>)}
                     </div>
                     <div className="tag-skew" style={{ background: gapNow > 0.05 ? "#e10600" : gapNow < -0.05 ? "#2a8bdb" : "#363642", height: 32, padding: "0 14px" }}>
                       <span className="mono" style={{ fontSize: 15 }}>{gapNow === 0 ? "level" : `${signed(gapNow, 1)} s vs real`}</span></div>

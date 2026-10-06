@@ -33,7 +33,7 @@ export async function loadCar(onProgress: (f: number) => void) {
 type Ref<T> = { current: T };
 type Props = {
   compound?: string; livery?: string; accent?: string; spin?: Ref<number>; reveal?: Ref<number>; jackOnChange?: boolean;
-  hologram?: boolean; brake?: Ref<number>; rainBlink?: Ref<boolean>;
+  hologram?: boolean; brake?: Ref<number>; rainBlink?: Ref<boolean>; steer?: Ref<number>;
 };
 
 function normalise(root: THREE.Object3D) {
@@ -130,7 +130,7 @@ function liveryMaterial(base: string, accent: string, carInv: { value: THREE.Mat
   return m;
 }
 
-export function CarModel({ compound = "MEDIUM", livery = "#101014", accent = "#e10600", spin, reveal, jackOnChange = true, hologram = false, brake, rainBlink }: Props) {
+export function CarModel({ compound = "MEDIUM", livery = "#101014", accent = "#e10600", spin, reveal, jackOnChange = true, hologram = false, brake, rainBlink, steer }: Props) {
   const stripe = useMemo(() => new THREE.MeshStandardMaterial({ color: TYRE_COLOR[compound], emissive: TYRE_COLOR[compound], emissiveIntensity: 0.8 }), []);
   const clip = useMemo(() => new THREE.Plane(new THREE.Vector3(-1, 0, 0), reveal ? -3.4 : 1e4), []);
   const clipInv = useMemo(() => new THREE.Plane(new THREE.Vector3(1, 0, 0), 3.4), []);
@@ -166,7 +166,7 @@ export function CarModel({ compound = "MEDIUM", livery = "#101014", accent = "#e
     const root = normalise(src);
     root.updateMatrixWorld(true);
     const centers = wheelMeshes.map((m) => new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3()));
-    const pivots: THREE.Group[] = [];
+    const pivots: THREE.Group[] = [], steers: THREE.Group[] = [];
     const rings: THREE.Mesh[] = [];
     const discMat = new THREE.MeshStandardMaterial({ color: "#2a2a30", emissive: "#ff5a14", emissiveIntensity: 0, metalness: 0.8, roughness: 0.4 });
     const textMat = new THREE.MeshBasicMaterial({ map: sidewallText(), transparent: true, depthWrite: false, toneMapped: false });
@@ -175,7 +175,10 @@ export function CarModel({ compound = "MEDIUM", livery = "#101014", accent = "#e
       if (!ms.length) continue;
       const box = new THREE.Box3(); ms.forEach((m) => box.expandByObject(m));
       const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
-      const pivot = new THREE.Group(); pivot.position.copy(c); root.add(pivot); pivot.updateMatrixWorld(true);
+      // front wheels hang from a steering knuckle (rotates about y); every wheel spins about its own axle (z)
+      const pivot = new THREE.Group();
+      if (sx === 1) { const knuckle = new THREE.Group(); knuckle.position.copy(c); root.add(knuckle); knuckle.add(pivot); knuckle.updateMatrixWorld(true); steers.push(knuckle); }
+      else { pivot.position.copy(c); root.add(pivot); pivot.updateMatrixWorld(true); }
       ms.forEach((m) => pivot.attach(m));
       const r = size.y / 2, w = size.z;
       for (const side of [-1, 1]) {
@@ -195,7 +198,7 @@ export function CarModel({ compound = "MEDIUM", livery = "#101014", accent = "#e
         const h = new THREE.Mesh(o.geometry, holo); h.matrixAutoUpdate = false; h.matrix.copy(o.matrixWorld); holoGroup.add(h);
       });
     }
-    return { root, pivots, paint, trim, holo, holoGroup, discMat, rain };
+    return { root, pivots, steers, paint, trim, holo, holoGroup, discMat, rain };
   }, []);
 
   useEffect(() => {
@@ -219,6 +222,8 @@ export function CarModel({ compound = "MEDIUM", livery = "#101014", accent = "#e
     carInv.value.copy(built.root.matrixWorld).invert();
     const w = spin ? spin.current : 0;
     built.pivots.forEach((p) => (p.rotation.z -= w * d));
+    const st = steer ? steer.current : 0;
+    built.steers.forEach((k) => (k.rotation.y = st));
     stripe.color.lerp(target.current, 1 - Math.pow(0.002, d)); stripe.emissive.copy(stripe.color);
     const b = brake ? brake.current : 0;
     built.discMat.emissiveIntensity += (b * 2.4 - built.discMat.emissiveIntensity) * Math.min(1, d * (b > built.discMat.emissiveIntensity ? 14 : 2.5));

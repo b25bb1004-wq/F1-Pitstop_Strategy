@@ -1,6 +1,6 @@
 /* Pitwall service worker. Hashed build assets and fonts: cache-first (immutable).
    Page, data and models: network-first with offline fallback, so updates always land. */
-const CACHE = "pitwall-v2.3";
+const CACHE = "pitwall-v2.4";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));

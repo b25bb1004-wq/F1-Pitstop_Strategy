@@ -16,6 +16,8 @@ to the F1 broadcast-graphics language.
   - A garage car that swaps compound on BOX, with numbered spec hotspots cycling like a broadcast explainer.
   - A 3D race theatre and onboard on real circuit geometry with true elevation and a telemetry speed profile.
   - What If: the real car races its white "what if" twin, with a live gap tag.
+  - Director camera: braking zones from the real speed trace become broadcast corners, each with a long-lens trackside
+    camera and a caption; front wheels steer to the real curvature (Ackermann).
   - A race-engineer guide: profile-aware spotlight tour whose tasks complete only when done, plus Explain mode.
 - **F1 semantics:** purple means best (timing screens). Tyre rings carry S/M/H letters, so colour is never the only
   cue. Team colours are the 2025 liveries.
