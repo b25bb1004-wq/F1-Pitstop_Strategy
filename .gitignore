@@ -6,3 +6,5 @@ __pycache__/
 .claude/
 .jupyter/
 .ipynb_checkpoints/
+reports/*.parquet
+reports/*.log

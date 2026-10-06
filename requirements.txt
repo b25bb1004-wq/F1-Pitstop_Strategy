@@ -1,4 +1,8 @@
 fastf1>=3.8
 pandas>=2.0
+numpy>=1.26
+scipy>=1.11
 scikit-learn>=1.5
+pyarrow>=14
+matplotlib>=3.8
 jupyter
