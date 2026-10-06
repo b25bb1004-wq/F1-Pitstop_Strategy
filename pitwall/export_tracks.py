@@ -42,6 +42,7 @@ def outline(year, rnd):
     s.load(laps=True, telemetry=True, weather=False, messages=False)
     lap = s.laps.pick_quicklaps().pick_fastest()
     pos = lap.get_pos_data()
+    tel = lap.get_telemetry()
     xyz = pos[["X", "Y", "Z"]].to_numpy(float)
     xyz = xyz[np.r_[True, np.any(np.diff(xyz[:, :2], axis=0) != 0, axis=1)]]
     xy, zz = xyz[:, :2], xyz[:, 2]
@@ -62,7 +63,25 @@ def outline(year, rnd):
     lo, hi = pts.min(0), pts.max(0)
     scale = (hi - lo).max()
     norm = lambda p: ((p - lo) / scale).round(4)
-    out = {"points": norm(pts).tolist(), "aspect": float((hi - lo)[1] / (hi - lo)[0]),
+    # telemetry of the same lap, resampled to the same N points by distance fraction so it aligns with `points`
+    d = tel["Distance"].to_numpy(float)
+    keep = np.r_[True, np.diff(d) > 0]
+    d = d[keep]
+    f = (d - d[0]) / (d[-1] - d[0])
+    grid = np.linspace(0, 1, N_POINTS)
+    ch = lambda col: np.interp(grid, f, tel[col].to_numpy(float)[keep])
+    secs = (tel["Time"].dt.total_seconds().to_numpy(float))[keep]
+    telemetry = {
+        "driver": str(lap["Driver"]), "team": str(lap["Team"]), "lap_time": round(float(lap["LapTime"].total_seconds()), 3),
+        "speed": np.round(ch("Speed")).astype(int).tolist(),
+        "throttle": np.clip(np.round(ch("Throttle")), 0, 100).astype(int).tolist(),
+        "brake": (ch("Brake") > 0.5).astype(int).tolist(),
+        "gear": np.round(ch("nGear")).astype(int).tolist(),
+        "rpm": np.round(ch("RPM") / 10).astype(int).tolist(),
+        "drs": (ch("DRS") >= 10).astype(int).tolist(),
+        "t": np.round(np.interp(grid, f, secs - secs[0]), 3).tolist(),
+    }
+    out = {"points": norm(pts).tolist(), "aspect": float((hi - lo)[1] / (hi - lo)[0]), "tel": telemetry,
            "length_m": round(length / 10, 0), "race": f"{year}_{rnd:02d}",
            # FastF1 positions are in 1/10 m: one normalised unit is scale/10 metres
            "scale_m": round(float(scale) / 10, 1),

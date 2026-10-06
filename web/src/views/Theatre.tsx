@@ -3,15 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
-import { Data, Driver, TEAM_COLOR, TYRE_COLOR, fmt, reducedMotion } from "../data";
+import { Data, Driver, TEAM_COLOR, TYRE_COLOR, fmt, reducedMotion, timeToDistFn } from "../data";
+import LineChart from "../charts/LineChart";
 import { Icon, Tyre, useReveal } from "../ui/kit";
 import { CircuitScene, Feed } from "../three/Circuit3D";
+import { DPR, FX, Safe3D } from "../ui/safety";
+import { emit } from "../guide/bus";
 
 const TYRE_NAME: Record<string, string> = { S: "SOFT", M: "MEDIUM", H: "HARD", I: "MEDIUM", W: "MEDIUM" };
-const MODES = [["chase", "Chase"], ["heli", "Heli"], ["overview", "Overview"]] as const;
+const MODES = [["chase", "Chase"], ["tv", "TV"], ["heli", "Heli"], ["overview", "Overview"]] as const;
 
-type State = { d: Driver; D: number; frac: number; lapIdx: number; out: boolean; done: boolean; lapDur: number };
-const SPEEDS = [8, 16, 32, 64, 128];
+type RDriver = Driver & { tEnd: number[]; last: number; finished: boolean; rank: number };
+type State = { d: RDriver; D: number; frac: number; lapIdx: number; out: boolean; done: boolean; lapDur: number };
+const SPEEDS = [1, 2, 4, 8, 16, 32, 64, 128];
 
 function prepare(race: Data["races"][0]) {
   const drivers = race.drivers.map((d) => {
@@ -74,9 +78,10 @@ export default function Theatre({ data }: { data: Data }) {
   const track = data.tracks[race.circuit];
   const prep = useMemo(() => prepare(race), [race]);
   const at = useTrackPath(track.points);
+  const ttd = useMemo(() => timeToDistFn((track as any).tel), [track]);
   const [sel, setSel] = useState(prep.drivers[0]?.driver);
   const [playing, setPlaying] = useState(!reducedMotion());
-  const [speed, setSpeed] = useState(16);
+  const [speed, setSpeed] = useState(8);
   const [tick, setTick] = useState(0);
   const [mode, setMode] = useState<string>("chase");
   const T = useRef(0);
@@ -139,7 +144,7 @@ export default function Theatre({ data }: { data: Data }) {
       g.clearRect(0, 0, g.canvas.width, g.canvas.height);
       if (layer.current && layer.current.width > 0 && layer.current.height > 0) g.drawImage(layer.current, 0, 0);
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const P = (f: number) => { const p = at(f); return [ox + p[0] * s, oy + (asp - p[1]) * s]; };
+      const P = (f: number) => { const p = at(ttd(f)); return [ox + p[0] * s, oy + (asp - p[1]) * s]; };
       const all = prep.drivers.map((d) => stateAt(d, T.current));
       feed.current.cars = all.map((x) => ({
         code: x.d.driver, team: x.d.team, frac: x.done ? 0 : x.frac, lapDur: x.lapDur, visible: !x.out && !x.done,
@@ -148,6 +153,7 @@ export default function Theatre({ data }: { data: Data }) {
       const me = all.find((x) => x.d.driver === live.current.sel);
       feed.current.compound = TYRE_NAME[me?.d.laps[me.lapIdx]?.tyre || "M"] || "MEDIUM";
       (feed.current as any).speed = live.current.playing ? live.current.speed : 0;
+      feed.current.sc = prep.spans.some((sp) => T.current >= sp.from && T.current < sp.to);
       const states = all.filter((x) => !x.out && !(x.done && T.current > x.d.last + 30));
       states.sort((a, b) => a.D - b.D);
       for (const st of states) {
@@ -171,7 +177,7 @@ export default function Theatre({ data }: { data: Data }) {
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [prep, at, track]);
+  }, [prep, at, track, ttd]);
 
   // timing tower (React, ~7 Hz)
   const states = prep.drivers.map((d) => stateAt(d, tick)).sort((a, b) => b.D - a.D);
@@ -200,26 +206,27 @@ export default function Theatre({ data }: { data: Data }) {
         </div>
       </div>
       <div className="deck stage3d rv">
-        <Canvas dpr={[1, 1.5]} camera={{ fov: 42, near: 0.5, far: 12000, position: [0, 60, 60] }} gl={{ antialias: true, powerPreference: "high-performance" }}
-          onCreated={({ gl }) => { gl.localClippingEnabled = true; }}>
+        <Safe3D label="Race replay">{(k, onLost) => (
+        <Canvas key={k} dpr={DPR} camera={{ fov: 42, near: 0.5, far: 12000, position: [0, 60, 60] }} gl={{ antialias: true, powerPreference: "high-performance" }}
+          onCreated={({ gl }) => { gl.localClippingEnabled = true; onLost(gl); }}>
           <CircuitScene track={track} feed={feed} mode={mode} livery={TEAM_COLOR[selD.team] || "#14161b"} />
-          <EffectComposer multisampling={0}>
+          {FX && <EffectComposer multisampling={0}>
             <Bloom mipmapBlur luminanceThreshold={0.4} intensity={1.2} radius={0.75} />
             <Vignette offset={0.2} darkness={0.8} />
-          </EffectComposer>
-        </Canvas>
+          </EffectComposer>}
+        </Canvas>)}</Safe3D>
         <div className="overlay">
           <div className="lapcount">LAP {leaderLap}<small>/ {race.laps}</small><div className="label" style={{ marginTop: 8 }}>{race.event}</div>
             <div className="follow"><span className="team" style={{ background: TEAM_COLOR[selD.team] || "#888" }} />{selD.driver} · {selD.team}</div></div>
           <div style={{ display: "grid", gap: 10, justifyItems: "end" }}>
             <div className="seg modes" role="group" aria-label="Camera">
-              {MODES.map(([k, l]) => <button key={k} aria-pressed={mode === k} onClick={() => setMode(k)}>{l}</button>)}
+              {MODES.map(([k, l]) => <button key={k} aria-pressed={mode === k} onClick={() => { setMode(k); emit("theatre:mode", k); }}>{l}</button>)}
             </div>
             {flag && <div className={`flag ${flag.s === "S" ? "sc" : ""}`}>{flag.s === "S" ? "Safety car" : "Virtual safety car"}</div>}
           </div>
         </div>
         <div className="minimap" ref={stage}><canvas ref={canvas} role="img" aria-label={`${race.event} track map, lap ${leaderLap} of ${race.laps}`} /></div>
-        <div className="deck tower tower-float" aria-label="Timing tower">
+        <div className="deck tower tower-float" aria-label="Timing tower" data-explain="tower">
           <div className="deck-head" style={{ padding: "6px 8px 0" }}><span className="label">Timing tower</span><span className="meta">bar = P(box this lap)</span></div>
           {states.map((st, i) => {
             const lap = st.d.laps[st.lapIdx];
@@ -228,7 +235,7 @@ export default function Theatre({ data }: { data: Data }) {
             const gap = st.out ? "OUT" : st.done ? (st.d.finished ? `P${st.d.rank}` : "–") : i === 0 ? "Leader"
               : leader.done ? "last lap" : leader.D - st.D >= 1 ? `+${Math.floor(leader.D - st.D)}L` : `+${fmt((leader.D - st.D) * leader.lapDur, 1)}`;
             return (
-              <button key={st.d.driver} className={`tower-row ${st.d.driver === sel ? "sel" : ""} ${lap?.call === 1 && !st.done ? "calling" : ""}`} onClick={() => setSel(st.d.driver)}
+              <button key={st.d.driver} className={`tower-row ${st.d.driver === sel ? "sel" : ""} ${lap?.call === 1 && !st.done ? "calling" : ""}`} onClick={() => { setSel(st.d.driver); emit("theatre:follow", st.d.driver); }}
                 aria-label={`P${i + 1} ${st.d.driver}, ${st.d.team}`} aria-pressed={st.d.driver === sel}>
                 <span className="pos">{i + 1}</span>
                 <span className="team" style={{ background: TEAM_COLOR[st.d.team] || "#888" }} />
@@ -237,7 +244,7 @@ export default function Theatre({ data }: { data: Data }) {
                 <span className="callbar"><i style={{ width: `${Math.round(p * 100)}%` }} /></span>
                 <span className="gap">{gap}</span>
                 {pitting && <span className="tag">PIT</span>}
-                {!pitting && lap?.call === 1 && !st.done && <span className="tag" style={{ background: "var(--amber)", color: "#140c00", boxShadow: "0 0 14px var(--amber-glow)" }}>BOX?</span>}
+                {!pitting && lap?.call === 1 && !st.done && <span className="tag call">BOX?</span>}
                 {st.out && <span className="tag out">OUT</span>}
               </button>
             );
@@ -250,13 +257,13 @@ export default function Theatre({ data }: { data: Data }) {
         </button>
         <div className="mono" style={{ minWidth: 92, color: "var(--text-2)", fontSize: 13 }}>{`${Math.floor(tick / 60)}:${String(Math.floor(tick % 60)).padStart(2, "0")}`}<br /><span style={{ color: "var(--text-3)" }}>race clock</span></div>
         <div className="scrub">
-          <div className="bands">{prep.spans.map((sp, i) => <i key={i} style={{ left: `${(sp.from / prep.maxT) * 100}%`, width: `${((sp.to - sp.from) / prep.maxT) * 100}%`, background: sp.s === "S" ? "var(--amber-2)" : "var(--yellow)", opacity: 0.55 }} />)}</div>
+          <div className="bands">{prep.spans.map((sp, i) => <i key={i} style={{ left: `${(sp.from / prep.maxT) * 100}%`, width: `${((sp.to - sp.from) / prep.maxT) * 100}%`, background: sp.s === "S" ? "#ff8a00" : "var(--yellow)", opacity: 0.6 }} />)}</div>
           <input type="range" min={0} max={Math.round(prep.maxT)} value={Math.round(tick)} aria-label="Race time"
             style={{ ["--fill" as any]: `${(tick / prep.maxT) * 100}%` }}
             onChange={(e) => { T.current = +e.target.value; setTick(T.current); }} />
           <div className="marks">
             {stops.map((l) => <i key={"s" + l.lap} style={{ left: `${((l.t as number) / prep.maxT) * 100}%`, background: "var(--green)" }} title={`${selD.driver} stop lap ${l.lap}`} />)}
-            {calls.map((l) => <i key={"c" + l.lap} style={{ left: `${((l.t as number) / prep.maxT) * 100}%`, background: "var(--amber)", opacity: 0.8 }} />)}
+            {calls.map((l) => <i key={"c" + l.lap} style={{ left: `${((l.t as number) / prep.maxT) * 100}%`, background: "var(--text)", opacity: 0.8 }} />)}
           </div>
         </div>
         <div className="speed" role="group" aria-label="Playback speed">
@@ -280,29 +287,24 @@ export default function Theatre({ data }: { data: Data }) {
 }
 
 function LapChart({ driver, lapNow, raceLaps }: { driver: Driver; lapNow: number; raceLaps: number }) {
-  const W = 900, H = 230, pl = 46, pr = 14, pt = 14, pb = 26;
   const laps = driver.laps.filter((l) => l.time);
   const reps = laps.filter((l) => l.rep).map((l) => l.time as number).sort((a, b) => a - b);
   const med = reps[Math.floor(reps.length / 2)] || 90;
-  const y0 = med - 2.5, y1 = med + 5;
-  const X = (l: number) => pl + ((l - 1) / (raceLaps - 1)) * (W - pl - pr);
-  const Y = (t: number) => pt + (1 - (Math.min(Math.max(t, y0), y1) - y0) / (y1 - y0)) * (H - pt - pb);
-  const pred = driver.laps.filter((l) => l.pred).map((l) => `${X(l.lap)},${Y(l.pred as number)}`).join(" ");
-  const pline = driver.laps.filter((l) => l.p != null).map((l) => `${X(l.lap)},${H - pb - (l.p as number) * 40}`).join(" ");
+  const clamp = (t: number) => Math.min(Math.max(t, med - 2.5), med + 5);
+  const stops = driver.laps.filter((l) => l.pit).map((l) => ({ x: l.lap + 0.5, label: "BOX", color: "#f5f5f7" }));
   return (
     <div className="deck pad rv">
-      <div className="deck-head"><span className="label">Lap time vs one-lap-ahead prediction · {driver.driver}</span>
-        <span className="meta"><span style={{ color: "var(--blue)" }}>━</span> predicted from laps already driven · <span style={{ color: "var(--red)" }}>━</span> P(box)</span></div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Lap time chart">
-        {[0, 1, 2, 3].map((k) => { const t = y0 + ((y1 - y0) * k) / 3; return <g key={k}><line x1={pl} x2={W - pr} y1={Y(t)} y2={Y(t)} stroke="rgba(255,255,255,.06)" /><text x={pl - 8} y={Y(t) + 4} fontSize="10" fill="#848c9b" textAnchor="end" fontFamily="JetBrains Mono">{t.toFixed(1)}</text></g>; })}
-        <polyline points={pline} fill="none" stroke="#ff2a1f" strokeWidth="1.5" opacity=".75" />
-        <polyline points={pred} fill="none" stroke="#6aa8ff" strokeWidth="2" />
-        {laps.map((l) => <circle key={l.lap} cx={X(l.lap)} cy={Y(l.time as number)} r={l.rep ? 3.2 : 2.2}
-          fill={l.rep ? TYRE_COLOR[l.tyre] || "#aaa" : "none"} stroke={l.rep ? "none" : "#848c9b"} />)}
-        {driver.laps.filter((l) => l.pit).map((l) => <line key={l.lap} x1={X(l.lap + 0.5)} x2={X(l.lap + 0.5)} y1={pt} y2={H - pb} stroke="#3ddc97" strokeDasharray="4 3" />)}
-        <line x1={X(lapNow)} x2={X(lapNow)} y1={pt} y2={H - pb} stroke="#ffb547" strokeWidth="1.5" />
-        <text x={X(lapNow) + 5} y={pt + 10} fontSize="10" fill="#ffb547" fontFamily="JetBrains Mono">L{lapNow}</text>
-      </svg>
+      <div className="deck-head"><span className="label">Lap time · {driver.driver}</span><span className="meta">grows with the replay · dots coloured by tyre, letter in tooltip</span></div>
+      <LineChart ariaLabel={`Lap times for ${driver.driver}`} height={250} x={[1, raceLaps]} y={[med - 2.5, med + 5]} reveal={lapNow} playhead={lapNow}
+        xLabel="lap" fmtY={(v) => v.toFixed(1)} markers={stops} animateKey={driver.driver}
+        series={[
+          { id: "act", label: "Actual", color: "#f5f5f7", kind: "dots", points: laps.filter((l) => l.rep).map((l) => [l.lap, clamp(l.time as number)]), dotColor: (_d, i) => TYRE_COLOR[laps.filter((l) => l.rep)[i]?.tyre] || "#aaa" },
+          { id: "pred", label: "Predicted (laps already driven)", color: "#2a8bdb", kind: "line", points: driver.laps.filter((l) => l.pred).map((l) => [l.lap, clamp(l.pred as number)]) },
+        ]} />
+      <div className="deck-head" style={{ marginTop: 14 }}><span className="label">P(team boxes this lap)</span><span className="meta">pit-call model · threshold frozen from 2024</span></div>
+      <LineChart ariaLabel={`Pit-call probability for ${driver.driver}`} height={150} x={[1, raceLaps]} y={[0, 1]} yTicks={[0, 0.5, 1]} reveal={lapNow} playhead={lapNow}
+        fmtY={(v) => `${Math.round(v * 100)}%`} xLabel="lap" markers={stops} animateKey={driver.driver + "p"}
+        series={[{ id: "p", label: "P(box)", color: "#e10600", kind: "area", points: driver.laps.filter((l) => l.p != null).map((l) => [l.lap, l.p as number]) }]} />
     </div>
   );
 }

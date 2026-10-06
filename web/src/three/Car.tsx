@@ -1,5 +1,5 @@
 /* A procedurally modelled 2020s F1 car (no external model). x = forward, y = up, z = lateral.
- * `reveal` (0..1) fades the solid body in over amber blueprint edges; `spin` drives wheel rotation
+ * `reveal` (0..1) fades the solid body in over blueprint edges; `spin` drives wheel rotation
  * (rad/s); `compound` colours the tyre sidewall stripes and animates a pit-stop "jack" on change. */
 import * as THREE from "three";
 import { useEffect, useMemo, useRef } from "react";
@@ -46,14 +46,14 @@ export function useCarMaterials() {
     return {
       carbon: physical({ color: "#121419", metalness: 0.45, roughness: 0.34, clearcoat: 1, clearcoatRoughness: 0.12 }),
       gloss: physical({ color: "#0a0b0e", metalness: 0.6, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.08 }),
-      amber: physical({ color: "#ffb547", metalness: 0.35, roughness: 0.28, clearcoat: 1, emissive: "#ff8a00", emissiveIntensity: 0.18 }),
+      amber: physical({ color: "#e10600", metalness: 0.35, roughness: 0.28, clearcoat: 1, emissive: "#e10600", emissiveIntensity: 0.18 }),
       red: physical({ color: "#ff2a1f", metalness: 0.3, roughness: 0.3, clearcoat: 1, emissive: "#ff2a1f", emissiveIntensity: 0.12 }),
       rubber: physical({ color: "#0d0d0f", metalness: 0, roughness: 0.92 }),
       rim: physical({ color: "#24272e", metalness: 0.95, roughness: 0.25 }),
       helmet: physical({ color: "#f4f4f6", metalness: 0.2, roughness: 0.25, clearcoat: 1 }),
       visor: physical({ color: "#050506", metalness: 1, roughness: 0.05 }),
       rain: new THREE.MeshStandardMaterial({ color: "#ff2a1f", emissive: "#ff2a1f", emissiveIntensity: 2.5 }),
-      edge: new THREE.LineBasicMaterial({ color: "#ffb547", transparent: true, opacity: 0.9 }),
+      edge: new THREE.LineBasicMaterial({ color: "#d8dde6", transparent: true, opacity: 0.9 }),
     };
   }, []);
 }
@@ -103,7 +103,7 @@ function Wheel({ r, w, stripe, mats, refCb, position }: any) {
 
 export function Car({ compound = "MEDIUM", reveal, spin, jackOnChange = true }: Props) {
   const mats = useCarMaterials();
-  // reveal: everything with x <= plane.constant is solid; an amber scan line rides the boundary
+  // reveal: everything with x <= plane.constant is solid; a red scan line rides the boundary
   const clip = useMemo(() => new THREE.Plane(new THREE.Vector3(-1, 0, 0), reveal ? -3.4 : 100), []);
   const scan = useRef<THREE.Mesh>(null);
   useMemo(() => {
@@ -203,7 +203,7 @@ export function Car({ compound = "MEDIUM", reveal, spin, jackOnChange = true }: 
       {reveal && (
         <mesh ref={scan} position={[-3.4, 0.62, 0]}>
           <boxGeometry args={[0.025, 1.35, 2.3]} />
-          <meshBasicMaterial color="#ffc477" transparent opacity={0.28} toneMapped={false} depthWrite={false} />
+          <meshBasicMaterial color="#ff2a1f" transparent opacity={0.28} toneMapped={false} depthWrite={false} />
         </mesh>
       )}
       {[[1.92, 0.36, 0.98, 0.36, 0.36], [1.92, 0.36, -0.98, 0.36, 0.36], [-1.62, 0.38, 0.95, 0.38, 0.46], [-1.62, 0.38, -0.95, 0.38, 0.46]].map(

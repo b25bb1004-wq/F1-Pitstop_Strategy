@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import * as THREE from "three";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import gsap from "gsap";
@@ -9,6 +10,17 @@ import { CarModel, hasCar } from "../three/CarModel";
 import { Studio } from "../three/Scenes";
 import { Data, TYRE_COLOR, fmt, reducedMotion } from "../data";
 import { Ring, Segmented, Slider, Tyre, useReveal, useVisible } from "../ui/kit";
+import { DPR, FX, Safe3D } from "../ui/safety";
+import { emit } from "../guide/bus";
+
+const SPEC = [
+  { p: [2.75, 0.32, 0.6], t: "Front wing", d: "4 elements · adjustable flap" },
+  { p: [0.35, 1.05, 0], t: "Halo", d: "titanium · ~9 kg · 125 kN load" },
+  { p: [0.4, 0.68, 0.72], t: "Sidepod inlet", d: "radiators · ground-effect feed" },
+  { p: [-0.85, 1.05, 0], t: "Power unit", d: "1.6 L V6 turbo hybrid · ~1000 hp" },
+  { p: [-0.6, 0.12, -0.85], t: "Floor", d: "venturi tunnels · most of the downforce" },
+  { p: [-2.45, 1.22, 0], t: "Rear wing · DRS", d: "flap opens on straights · +10-12 km/h" },
+];
 
 const PRESETS = [
   ["Bahrain · softs · green", { circuit: "Sakhir", lap: 15, raceLaps: 57, compound: "SOFT", tyreAge: 14, status: "green", trackTemp: 30, twoCompounds: false }],
@@ -18,22 +30,67 @@ const PRESETS = [
   ["Silverstone · to the flag", { circuit: "Silverstone", lap: 38, raceLaps: 52, compound: "HARD", tyreAge: 15, status: "green", trackTemp: 40, twoCompounds: true }],
 ] as const;
 
+/* Projects the spec points to screen space every frame and moves plain DOM nodes: one overlay,
+ * no per-label React roots, and the active card can always sit on top. */
+function Hotspots({ points, nodes }: { points: number[][]; nodes: React.MutableRefObject<(HTMLDivElement | null)[]> }) {
+  const { camera, size } = useThree();
+  const v = useMemo(() => new THREE.Vector3(), []);
+  useFrame(() => {
+    points.forEach((p, i) => {
+      const el = nodes.current[i];
+      if (!el) return;
+      v.set(p[0] - 0.2, p[1], p[2]).project(camera);
+      const hide = v.z > 1;
+      el.style.visibility = hide ? "hidden" : "visible";
+      el.style.transform = `translate3d(${((v.x + 1) / 2) * size.width}px, ${((1 - v.y) / 2) * size.height}px, 0)`;
+    });
+  });
+  return null;
+}
+
 function Garage({ compound, circuit, lap, laps, age, shown }: any) {
   const [ref, visible] = useVisible<HTMLDivElement>();
   const spin = useRef(0);
+  const [spec, setSpec] = useState(true);
+  // one spec card at a time: the hovered hotspot, else a slow broadcast-style cycle through the car
+  const [hot, setHot] = useState<number | null>(null);
+  const [auto, setAuto] = useState(0);
+  const items = [...SPEC, { p: [1.92, 0.95, 0.98], t: `Tyre · ${compound.toLowerCase()}`, d: shown ? "fresh set" : `${age} laps old` }];
+  useEffect(() => {
+    if (!spec || hot != null || !visible || reducedMotion()) return;
+    const id = setInterval(() => setAuto((a) => (a + 1) % items.length), 3200);
+    return () => clearInterval(id);
+  }, [spec, hot, visible, items.length]);
+  const active = hot ?? auto;
+  const nodes = useRef<(HTMLDivElement | null)[]>([]);
   return (
-    <div className="deck garage rv" ref={ref}>
-      <Canvas shadows dpr={[1, 1.6]} frameloop={visible ? "always" : "never"} camera={{ position: [4.7, 1.75, 5.0], fov: 30 }}
-        onCreated={({ gl }) => { gl.localClippingEnabled = true; }}>
+    <div className="deck garage rv" ref={ref} data-explain="garage">
+      <Safe3D label="Garage">{(key, onLost) => (
+      <Canvas key={key} shadows={FX} dpr={DPR} frameloop={visible ? "always" : "never"} camera={{ position: [4.9, 1.8, 5.2], fov: 30 }}
+        onCreated={({ gl }) => { gl.localClippingEnabled = true; onLost(gl); }}>
         <Studio hdri />
-        <group position={[-0.2, 0, 0]}>{hasCar() ? <CarModel compound={compound} spin={spin} /> : <Car compound={compound} spin={spin} />}</group>
-        <OrbitControls target={[0.1, 0.45, 0]} autoRotate={!reducedMotion()} autoRotateSpeed={0.6} enablePan={false} enableZoom={false}
+        <group position={[-0.2, 0, 0]}>
+          {hasCar() ? <CarModel compound={compound} spin={spin} /> : <Car compound={compound} spin={spin} />}
+
+        </group>
+        {spec && <Hotspots points={items.map((c) => c.p)} nodes={nodes} />}
+        <OrbitControls target={[0.1, 0.45, 0]} autoRotate={!reducedMotion()} autoRotateSpeed={0.45} enablePan={false} enableZoom={false}
           minPolarAngle={0.9} maxPolarAngle={1.45} />
-        <EffectComposer multisampling={0}>
-          <Bloom mipmapBlur luminanceThreshold={0.6} intensity={0.7} radius={0.6} />
+        {FX && <EffectComposer multisampling={0}>
+          <Bloom mipmapBlur luminanceThreshold={0.6} intensity={0.6} radius={0.6} />
           <Vignette offset={0.25} darkness={0.7} />
-        </EffectComposer>
-      </Canvas>
+        </EffectComposer>}
+      </Canvas>)}</Safe3D>
+      {spec && <div className="hots">{items.map((c, i) => (
+        <div key={i} ref={(el) => { nodes.current[i] = el; }} className={`hot ${i === active ? "on" : ""}`}>
+          <button className="dot" aria-label={`${c.t}: ${c.d}`} onPointerEnter={() => setHot(i)} onPointerLeave={() => setHot(null)}
+            onFocus={() => setHot(i)} onBlur={() => setHot(null)} onClick={() => setHot(i)}>{i + 1}</button>
+          {i === active && <div className="card"><b>{c.t}</b><span>{c.d}</span></div>}
+        </div>))}</div>}
+      {spec && <ol className="speckey" aria-label="Car specification">{items.map((c, i) => (
+        <li key={i} className={i === active ? "on" : ""} onPointerEnter={() => setHot(i)} onPointerLeave={() => setHot(null)}>
+          <span className="n">{String(i + 1).padStart(2, "0")}</span>{c.t}</li>))}</ol>}
+      <button className="navbtn" onClick={() => setSpec(!spec)} aria-pressed={spec} style={{ position: "absolute", top: 14, right: 14, zIndex: 12 }}>{spec ? "Hide spec" : "Show spec"}</button>
       <div className="hud">
         <div><div className="label">{circuit}</div><div className="display" style={{ font: "700 34px/1 var(--display)" }}>LAP {lap}<span style={{ color: "var(--text-3)", fontSize: 18 }}> / {laps}</span></div></div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -126,7 +183,11 @@ function Radio({ r, st }: any) {
 export default function PitWall({ data }: { data: Data }) {
   const { model } = data;
   const [st, setSt] = useState<any>({ circuit: "Sakhir", lap: 15, raceLaps: 57, compound: "SOFT", tyreAge: 14, status: "green", trackTemp: 30, twoCompounds: false });
-  const set = (k: string, v: any) => setSt((s: any) => ({ ...s, [k]: v, lap: k === "raceLaps" ? Math.min(s.lap, v - 1) : k === "lap" ? v : s.lap }));
+  const set = (k: string, v: any) => {
+    setSt((s: any) => ({ ...s, [k]: v, lap: k === "raceLaps" ? Math.min(s.lap, v - 1) : k === "lap" ? v : s.lap }));
+    if (k === "status") emit("wall:status", v);
+    if (k === "compound") emit("wall:compound", v);
+  };
   const r = useMemo(() => decide(model, st, { bootstrap: true }), [model, st]);
   const circuits = useMemo(() => Object.keys(model.circuits).sort(), [model]);
   const root = useReveal("wall");
@@ -165,10 +226,10 @@ export default function PitWall({ data }: { data: Data }) {
 
         <div className="wall-main">
           <Garage compound={r.pitNow ? r.fit : st.compound} shown={r.pitNow} circuit={st.circuit} lap={st.lap} laps={st.raceLaps} age={st.tyreAge} />
-          <section className={`deck call rv ${r.pitNow ? "box" : ""}`} aria-label="Pit wall call">
+          <section className={`deck call rv ${r.pitNow ? "box" : ""}`} aria-label="Pit wall call" data-explain="call">
             <Radio r={r} st={st} />
             <div className="figs">
-              <div className="ringfig"><Ring value={agree * 100} color={r.pitNow ? "#ff2a1f" : "#3ddc97"} label="Bootstrap agreement" />
+              <div className="ringfig" data-explain="ring"><Ring value={agree * 100} color={r.pitNow ? "#e10600" : "#19c26b"} label="Bootstrap agreement" />
                 <div><div className="label">Model agreement</div><div style={{ color: "var(--text-2)", fontSize: 14, marginTop: 4 }}>{Math.round(agree * 30)} of 30 refitted models make the same call</div></div></div>
               <div className="figrow">
                 <div className="fig"><b className="mono">{fmt(Math.abs(r.gain), 2)}<small style={{ fontSize: 14, color: "var(--text-3)" }}> s</small></b><span>expected gain of the call</span></div>
@@ -176,12 +237,12 @@ export default function PitWall({ data }: { data: Data }) {
               </div>
             </div>
           </section>
-          <section className="deck pad rv" aria-label="Optimal strategy">
+          <section className="deck pad rv" aria-label="Optimal strategy" data-explain="strip">
             <div className="deck-head"><span className="label">Optimal strategy from here</span>
               <span className="meta mono">{r.plan.stops.map((p: any) => `L${p.lap} → ${p.fit[0]}`).join("  ·  ") || "no more stops"} · tyre cost {fmt(r.plan.tyreCost, 1)} s</span></div>
             <Strip N={st.raceLaps} now={st.lap} stints={r.plan.stints} stops={r.plan.stops} />
           </section>
-          <section className="deck pad rv" aria-label="Pit window">
+          <section className="deck pad rv" aria-label="Pit window" data-explain="window">
             <div className="deck-head"><span className="label">Pit window · cost of committing to a stop</span>
               <span className="meta">optimal <b style={{ color: "var(--purple)" }}>L{best.lap}</b> · within 0.5 s: L{Math.min(...near)}-L{Math.max(...near)} · now +{fmt(w[0].delta, 2)} s</span></div>
             <div className="window-bars" role="img" aria-label={`Optimal lap to stop ${best.lap}`}>

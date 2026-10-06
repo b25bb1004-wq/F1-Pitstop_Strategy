@@ -9,6 +9,7 @@ import { Car } from "../three/Car";
 import { CarModel, hasCar } from "../three/CarModel";
 import { Streaks, Studio } from "../three/Scenes";
 import { STAGES, reducedMotion } from "../data";
+import { Boundary, DPR, FX, hasWebGL } from "../ui/safety";
 
 type Props = { progress: number[]; ready: boolean; error: string | null; onDone: () => void; onRetry: () => void };
 
@@ -111,7 +112,8 @@ export default function Intro({ progress, ready, error, onDone, onRetry }: Props
   const stageIdx = progress.findIndex((p) => p < 1);
   return (
     <div className="intro" ref={root} role="dialog" aria-label="Loading Pitwall" aria-busy={phase === "loading"}>
-      <Canvas shadows dpr={[1, 1.6]} camera={{ position: [1.4, 1, 6.6], fov: 30, near: 0.1, far: 80 }} gl={{ antialias: true, powerPreference: "high-performance" }}>
+      {hasWebGL && <Boundary label="Intro" silent>
+      <Canvas shadows={FX} dpr={DPR} camera={{ position: [1.4, 1, 6.6], fov: 30, near: 0.1, far: 80 }} gl={{ antialias: true, powerPreference: "high-performance" }}>
         <Rig api={api} />
         <Studio intensity={0.35 + 0.65 * overall} />
         <group ref={car} position={[-0.3, 0, 0]}>
@@ -120,12 +122,13 @@ export default function Intro({ progress, ready, error, onDone, onRetry }: Props
             : <Car compound="SOFT" reveal={api.reveal} spin={api.spin} jackOnChange={false} />)}
         </group>
         <Streaks speed={api.speed} />
-        <EffectComposer multisampling={0}>
+        {FX && <EffectComposer multisampling={0}>
           <Bloom mipmapBlur luminanceThreshold={0.55} intensity={1.1} radius={0.7} />
           <ChromaticAberration ref={ca} offset={new THREE.Vector2(0, 0)} radialModulation={false} modulationOffset={0} />
           <Vignette eskil={false} offset={0.2} darkness={0.85} />
-        </EffectComposer>
+        </EffectComposer>}
       </Canvas>
+      </Boundary>}
 
       <div className="gantry" aria-hidden="true">
         {lightsOn.map((on, i) => (
@@ -133,7 +136,7 @@ export default function Intro({ progress, ready, error, onDone, onRetry }: Props
         ))}
       </div>
       <div className="brand">
-        <h1>Pitwall</h1>
+        <h1>Pit<span>wall</span></h1>
         <p aria-live="polite">
           {error ? "Telemetry link lost" : phase === "out" ? <b>Lights out and away we go</b>
             : phase === "hold" ? "Hold…" : stageIdx < 0 ? <>Grid formed <b>100%</b></> : <>{STAGES[stageIdx]} <b>{Math.round(overall * 100)}%</b></>}

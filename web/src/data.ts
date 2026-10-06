@@ -67,3 +67,16 @@ export const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)"
 export const fmt = (x: number | null | undefined, d = 2) => (x == null || !isFinite(x) ? "–" : Number(x).toFixed(d));
 export const signed = (x: number | null | undefined, d = 2) =>
   x == null || !isFinite(x) ? "–" : (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(d);
+
+/* lap-time fraction -> distance fraction along the lap, from the circuit's fastest-lap telemetry */
+export function timeToDistFn(tel?: { t: number[] }) {
+  if (!tel?.t?.length) return (f: number) => ((f % 1) + 1) % 1;
+  const T = tel.t[tel.t.length - 1] || 1, M = tel.t.length, tf = tel.t.map((v) => v / T);
+  return (f: number) => {
+    const x = isFinite(f) ? ((f % 1) + 1) % 1 : 0;
+    let lo = 0, hi = M - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (tf[m] < x) lo = m + 1; else hi = m; }
+    const i = Math.max(1, lo), t0 = tf[i - 1], t1 = tf[i];
+    return Math.min(0.99999, ((i - 1) + (t1 > t0 ? (x - t0) / (t1 - t0) : 0)) / (M - 1));
+  };
+}
