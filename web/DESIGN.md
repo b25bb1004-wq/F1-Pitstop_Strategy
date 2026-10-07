@@ -9,8 +9,9 @@ to the F1 broadcast-graphics language.
 ## Direction
 - **Purpose:** call "box or stay out?", let people watch the model against every real 2025 race, and answer
   their own "what if" questions with a live rerun.
-- **Tone:** F1 TV graphics package. Carbon panels, red accents, skewed tags, condensed italic headlines and mono
-  numbers. Not a dashboard template.
+- **Tone:** F1 TV graphics package on a flat black, telemetry-tool base (the look of f1-race-replay, not its layout):
+  pure black, outline track with green DRS zones, team-coloured text and dots, team-bordered driver cards, round
+  transport buttons and a segmented lap bar with flag markers. Red accents and condensed headlines stay.
 - **Signature moments:**
   - A start-light intro tied to real load progress: a hologram scans into a solid car, then lights out.
   - A garage car that swaps compound on BOX, with numbered spec hotspots cycling like a broadcast explainer.
@@ -25,7 +26,7 @@ to the F1 broadcast-graphics language.
 ## Tokens (`src/styles.css`)
 | Role | Value |
 |---|---|
-| Background / panel | #0b0b10 / #15151e (carbon) |
+| Background / panel | #000000 / #0c0c0d (flat, no glow or grid) |
 | Signature | F1 red #e10600 |
 | Real vs what-if, ahead / behind | blue #2a8bdb / red #ff4d45 |
 | Best / good | purple #a855f7 / green #2ba84a |

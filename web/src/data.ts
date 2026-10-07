@@ -9,7 +9,7 @@ export type Lap = {
 };
 export type Driver = { driver: string; team: string; finish: string; laps: Lap[] };
 export type Race = { race_id: string; event: string; circuit: string; laps: number; drivers: Driver[] };
-export type Track = { points: [number, number][]; aspect: number; length_m: number; race: string; scale_m: number; z: number[] };
+export type Track = { points: [number, number][]; aspect: number; length_m: number; race: string; scale_m: number; z: number[]; drs_zone?: number[] };
 export type Data = { model: any; metrics: any; tracks: Record<string, Track>; races: Race[] };
 
 async function fetchJson(name: string, onProgress: (f: number) => void) {

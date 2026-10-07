@@ -6,7 +6,8 @@ import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { Data, Driver, TEAM_COLOR, TYRE_COLOR, fmt, reducedMotion, timeToDistFn } from "../data";
 import LineChart from "../charts/LineChart";
 import { Icon, Tyre, useReveal } from "../ui/kit";
-import { CircuitScene, Feed } from "../three/Circuit3D";
+import { CircuitScene, Feed, newView } from "../three/Circuit3D";
+import ViewSphere from "../three/ViewSphere";
 import { DPR, FX, Safe3D } from "../ui/safety";
 import { emit } from "../guide/bus";
 import CornerTag from "../ui/CornerTag";
@@ -85,6 +86,14 @@ export default function Theatre({ data }: { data: Data }) {
   const [speed, setSpeed] = useState(4);
   const [tick, setTick] = useState(0);
   const [mode, setMode] = useState<string>("director");
+  const [lbOpen, setLbOpen] = useState(false);
+  const [labelsOn, setLabelsOn] = useState(true);
+  const [drsOn, setDrsOn] = useState(true);
+  const [keysOpen, setKeysOpen] = useState(false);
+  const view = useRef(newView()).current;
+  const labelHost = useRef<HTMLDivElement>(null);
+  const lbRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const T = useRef(0);
   const feed = useRef({ cars: [], compound: "MEDIUM", speed: 32 }) as Feed;
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -92,8 +101,8 @@ export default function Theatre({ data }: { data: Data }) {
   const layer = useRef<HTMLCanvasElement | null>(null);
   const geom = useRef({ W: 0, H: 0, s: 1, ox: 0, oy: 0, dpr: 1 });
   const root = useReveal("theatre");
-  const live = useRef({ playing, speed, sel });
-  live.current = { playing, speed, sel };
+  const live = useRef({ playing, speed, sel, labels: labelsOn });
+  live.current = { playing, speed, sel, labels: labelsOn };
 
   useEffect(() => { T.current = 0; setTick(0); setSel(prep.drivers[0]?.driver); }, [prep]);
 
@@ -112,22 +121,30 @@ export default function Theatre({ data }: { data: Data }) {
       const P = (p: number[]) => [ox + p[0] * s, oy + (asp - p[1]) * s];
       const path = () => { g.beginPath(); track.points.forEach((p, i) => { const [x, y] = P(p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); };
       g.lineJoin = "round"; g.lineCap = "round";
-      g.shadowColor = "rgba(255,138,0,.55)"; g.shadowBlur = 16; g.strokeStyle = "rgba(255,150,40,.10)"; g.lineWidth = 10; path(); g.stroke();
-      g.shadowBlur = 0; g.strokeStyle = "#151821"; g.lineWidth = 5; path(); g.stroke();
-      const grad = g.createLinearGradient(ox, oy, ox + s, oy + s * asp);
-      grad.addColorStop(0, "rgba(255,181,71,.65)"); grad.addColorStop(0.5, "rgba(255,255,255,.35)"); grad.addColorStop(1, "rgba(255,138,0,.65)");
-      g.strokeStyle = grad; g.lineWidth = 1.4; path(); g.stroke();
+      // double-outline road (grey edges, black asphalt), DRS zones in green
+      g.strokeStyle = "#9a9aa0"; g.lineWidth = 7; path(); g.stroke();
+      const drs = (track as any).drs_zone as number[] | undefined;
+      if (drs && drsOn) {
+        const n = track.points.length;
+        g.strokeStyle = "#22d65a";
+        for (let i = 0; i < n - 1; i++) {
+          if (drs[Math.round((i / (n - 1)) * (drs.length - 1))] !== 1) continue;
+          const [ax, ay] = P(track.points[i]), [bx, by] = P(track.points[i + 1]);
+          g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+        }
+      }
+      g.strokeStyle = "#000"; g.lineWidth = 4.2; path(); g.stroke();
       // start / finish
       const [x0, y0] = P(track.points[0]), [x1, y1] = P(track.points[2]);
       const nx = -(y1 - y0), ny = x1 - x0, n = Math.hypot(nx, ny) || 1;
       g.strokeStyle = "#fff"; g.lineWidth = 3; g.beginPath(); g.moveTo(x0 + (nx / n) * 10, y0 + (ny / n) * 10); g.lineTo(x0 - (nx / n) * 10, y0 - (ny / n) * 10); g.stroke();
-      g.fillStyle = "#aab1be"; g.font = "600 10px JetBrains Mono"; g.fillText("S/F", x0 + 12, y0 - 8);
+      g.fillStyle = "#9a9aa0"; g.font = "600 10px JetBrains Mono"; g.fillText("S/F", x0 + 12, y0 - 8);
       layer.current = L;
     };
     build();
     const ro = new ResizeObserver(build); ro.observe(host);
     return () => ro.disconnect();
-  }, [track]);
+  }, [track, drsOn]);
 
   // animation loop
   useEffect(() => {
@@ -161,18 +178,13 @@ export default function Theatre({ data }: { data: Data }) {
         const isSel = st.d.driver === live.current.sel;
         const col = TEAM_COLOR[st.d.team] || "#ccc";
         const [x, y] = P(st.done ? 0 : st.frac);
-        if (isSel && !st.done) {
-          for (let k = 24; k > 0; k--) {
-            const [tx, ty] = P(st.frac - k * 0.0025), [ux, uy] = P(st.frac - (k - 1) * 0.0025);
-            g.strokeStyle = `rgba(255,181,71,${(1 - k / 24) * 0.8})`; g.lineWidth = 2; g.beginPath(); g.moveTo(tx, ty); g.lineTo(ux, uy); g.stroke();
-          }
-        }
         const lap = st.d.laps[st.lapIdx];
         const pitting = Boolean(lap && lap.pit && st.frac > 0.75);
         g.fillStyle = pitting ? "rgba(255,255,255,.35)" : col;
-        g.beginPath(); g.arc(x, y, isSel ? 4.5 : 3, 0, Math.PI * 2); g.fill();
-        if (isSel) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.stroke();
-          g.font = "700 11px Jost"; g.fillStyle = "#fff"; g.fillText(st.d.driver, x + 9, y - 6); }
+        g.strokeStyle = "#000"; g.lineWidth = 1.2;
+        g.beginPath(); g.arc(x, y, isSel ? 4.2 : 3.2, 0, Math.PI * 2); g.fill(); g.stroke();
+        if (isSel) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.stroke(); }
+        if (isSel || live.current.labels) { g.font = `${isSel ? 700 : 600} 10px Barlow`; g.fillStyle = isSel ? "#fff" : col; g.fillText(st.d.driver, x + 7, y - 5); }
       }
       if (now - lastTick > 140) { lastTick = now; setTick(T.current); }
     };
@@ -191,6 +203,50 @@ export default function Theatre({ data }: { data: Data }) {
   const stops = selD.laps.filter((l) => l.pit);
   const clean = selD.laps.filter((l) => l.rep && l.time && l.pred);
   const mae = clean.reduce((a, l) => a + Math.abs((l.time as number) - (l.pred as number)), 0) / Math.max(clean.length, 1);
+  const selPos = Math.max(1, states.findIndex((x) => x.d.driver === selD.driver) + 1);
+  const ahead = states[selPos - 2], behind = states[selPos];
+  const gapTo = (a: typeof selState, b: typeof selState) => (a.D - b.D >= 1 ? `${Math.floor(a.D - b.D)}L` : `${fmt((a.D - b.D) * b.lapDur, 2)}s`);
+  const selLap = selState.d.laps[selState.lapIdx];
+  const lapStarts = useMemo(() => { const w = prep.drivers.find((d) => d.rank === 1) || prep.drivers[0]; return [0, ...(w?.tEnd || [])]; }, [prep]);
+  const seek = (t: number) => { T.current = Math.max(0, Math.min(prep.maxT, t)); setTick(T.current); };
+  const jumpLap = (dir: number) => {
+    const t = T.current; let idx = lapStarts.findIndex((x) => x > t); if (idx < 0) idx = lapStarts.length;
+    const k = idx - 1;
+    seek(dir > 0 ? lapStarts[k + 1] ?? prep.maxT : t - lapStarts[k] > 3 ? lapStarts[k] : lapStarts[Math.max(0, k - 1)]);
+  };
+  const stepSpeed = (d: number) => setSpeed((v) => SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, SPEEDS.indexOf(v) + d))]);
+  const togglePlay = () => { if (T.current >= prep.maxT) T.current = 0; setPlaying((p) => !p); };
+  // keyboard, like a video player, only while the replay is on screen and no field has focus
+  useEffect(() => {
+    let visible = false;
+    const io = new IntersectionObserver(([e]) => { visible = e.intersectionRatio > 0.4; }, { threshold: [0, 0.4, 1] });
+    if (stageRef.current) io.observe(stageRef.current);
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (!visible || e.metaKey || e.ctrlKey || e.altKey || /INPUT|SELECT|TEXTAREA/.test(t.tagName) || t.closest(".vs-globe")) return;
+      const map: Record<string, () => void> = {
+        " ": togglePlay, ArrowLeft: () => jumpLap(-1), ArrowRight: () => jumpLap(1), ArrowUp: () => stepSpeed(1), ArrowDown: () => stepSpeed(-1),
+        "1": () => setSpeed(1), "2": () => setSpeed(2), "3": () => setSpeed(4), "4": () => setSpeed(8),
+        r: () => { seek(0); setPlaying(true); }, l: () => setLabelsOn((v) => !v), d: () => setDrsOn((v) => !v), g: () => setLbOpen((v) => !v),
+        Escape: () => { setLbOpen(false); setKeysOpen(false); },
+      };
+      const f = map[e.key] || map[e.key.toLowerCase()];
+      if (f) { e.preventDefault(); f(); }
+    };
+    addEventListener("keydown", key);
+    return () => { removeEventListener("keydown", key); io.disconnect(); };
+  }, [prep, lapStarts]);
+  useEffect(() => {
+    if (!lbOpen) return;
+    const close = (e: PointerEvent) => { if (!lbRef.current?.contains(e.target as Node)) setLbOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [lbOpen]);
+  const seekAt = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = (e.currentTarget.querySelector(".lt") as HTMLElement).getBoundingClientRect();
+    seek(((e.clientX - r.left) / r.width) * prep.maxT);
+  };
+  const pct = (t: number) => `${(t / prep.maxT) * 100}%`;
   const firstCalls = (() => { const out: string[] = []; let seg: typeof selD.laps = []; selD.laps.forEach((l) => { seg.push(l); if (l.pit) { const c = seg.find((x) => x.call === 1); out.push(c ? (c.lap === l.lap ? "same lap" : `${c.lap - l.lap > 0 ? "+" : ""}${c.lap - l.lap}`) : "missed"); seg = []; } }); return out; })();
 
   return (
@@ -206,75 +262,122 @@ export default function Theatre({ data }: { data: Data }) {
           </select>
         </div>
       </div>
-      <div className="deck stage3d rv">
+      <div className="deck stage3d rv" ref={stageRef}>
         <Safe3D label="Race replay">{(k, onLost) => (
         <Canvas key={k} dpr={DPR} camera={{ fov: 42, near: 0.5, far: 12000, position: [0, 60, 60] }} gl={{ antialias: true, powerPreference: "high-performance" }}
           onCreated={({ gl }) => { gl.localClippingEnabled = true; onLost(gl); }}>
-          <CircuitScene track={track} feed={feed} mode={mode} livery={TEAM_COLOR[selD.team] || "#14161b"} />
+          <CircuitScene track={track} feed={feed} mode={mode} livery={TEAM_COLOR[selD.team] || "#14161b"} view={view} labels={{ host: labelHost, on: labelsOn }} />
           {FX && <EffectComposer multisampling={0}>
-            <Bloom mipmapBlur luminanceThreshold={0.4} intensity={1.2} radius={0.75} />
-            <Vignette offset={0.2} darkness={0.8} />
+            <Bloom mipmapBlur luminanceThreshold={0.5} intensity={0.9} radius={0.7} />
+            <Vignette offset={0.25} darkness={0.7} />
           </EffectComposer>}
         </Canvas>)}</Safe3D>
+        <div className="clabels" ref={labelHost} aria-hidden="true" />
         <div className="overlay">
           <div className="lapcount">LAP {leaderLap}<small>/ {race.laps}</small><div className="label" style={{ marginTop: 8 }}>{race.event}</div>
-            <div className="follow"><span className="team" style={{ background: TEAM_COLOR[selD.team] || "#888" }} />{selD.driver} · {selD.team}</div><CornerTag corner={feed.current.corner} /></div>
-          <div style={{ display: "grid", gap: 10, justifyItems: "end" }}>
+            <div className="dcard" style={{ ["--team" as any]: TEAM_COLOR[selD.team] || "#888" }}>
+              <div className="dcard-h"><span>Driver: {selD.driver}</span><small>{selD.team}</small></div>
+              <div className="dcard-b">
+                <dl>
+                  <div><dt>Position</dt><dd>P{selPos}</dd></div>
+                  <div><dt>Lap</dt><dd>{selLap?.lap ?? "–"} / {race.laps}</dd></div>
+                  <div><dt>Tyre</dt><dd><Tyre c={selLap?.tyre || "?"} /> {selLap?.age != null ? `${selLap.age} laps` : ""}</dd></div>
+                  <div><dt>Ahead{ahead ? ` (${ahead.d.driver})` : ""}</dt><dd>{ahead ? `+${gapTo(ahead, selState)}` : "leader"}</dd></div>
+                  <div><dt>Behind{behind ? ` (${behind.d.driver})` : ""}</dt><dd>{behind ? `−${gapTo(selState, behind)}` : "–"}</dd></div>
+                </dl>
+                <div className="vbars" title="Pit-call model: probability the team boxes this lap">
+                  <div className="vbar"><i style={{ height: `${Math.round((selState.done ? 0 : selLap?.p ?? 0) * 100)}%` }} /></div>
+                  <span>BOX</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "grid", gap: 10, justifyItems: "end", alignContent: "start" }}>
             <div className="seg modes" role="group" aria-label="Camera">
               {MODES.map(([k, l]) => <button key={k} aria-pressed={mode === k} onClick={() => { setMode(k); emit("theatre:mode", k); }}>{l}</button>)}
+            </div>
+            <div className={`lb ${lbOpen ? "open" : ""}`} ref={lbRef} data-explain="tower">
+              <button className="lb-head" onClick={() => setLbOpen((o) => !o)} aria-expanded={lbOpen} aria-controls="lb-list">
+                <span className="lb-t">Leaderboard</span>
+                <span className="lb-s"><b style={{ color: TEAM_COLOR[leader?.d.team] || "#ccc" }}>1. {leader?.d.driver}</b>
+                  <em>following</em><b style={{ color: TEAM_COLOR[selD.team] || "#ccc" }}>{selPos}. {selD.driver}</b></span>
+                <Icon name="chevron" />
+              </button>
+              {lbOpen && (
+                <div className="lb-list" id="lb-list" role="listbox" aria-label="Leaderboard: pick a driver to follow">
+                  {states.map((st, i) => {
+                    const lap = st.d.laps[st.lapIdx];
+                    const p = st.done ? 0 : lap?.p ?? 0;
+                    const pitting = Boolean(!st.done && lap?.pit && st.frac > 0.6);
+                    const gap = st.out ? "" : st.done ? (st.d.finished ? `P${st.d.rank}` : "–") : i === 0 ? "Leader"
+                      : leader.done ? "last lap" : leader.D - st.D >= 1 ? `+${Math.floor(leader.D - st.D)}L` : `+${fmt((leader.D - st.D) * leader.lapDur, 1)}`;
+                    const isSel = st.d.driver === sel;
+                    return (
+                      <button key={st.d.driver} role="option" aria-selected={isSel} className={`lb-row ${isSel ? "sel" : ""} ${lap?.call === 1 && !st.done ? "calling" : ""}`}
+                        onClick={() => { setSel(st.d.driver); emit("theatre:follow", st.d.driver); setLbOpen(false); }}>
+                        <span className="pos">{i + 1}.</span>
+                        <span className="code" style={{ color: isSel ? undefined : TEAM_COLOR[st.d.team] || "#ccc" }}>{st.d.driver}</span>
+                        <span className="gap">{gap}</span>
+                        <span className="pb" title={`P(box) ${Math.round(p * 100)}%`}><i style={{ width: `${Math.round(p * 100)}%` }} /></span>
+                        {st.out ? <span className="tag out">OUT</span> : pitting ? <span className="tag">PIT</span> : <Tyre c={lap?.tyre || "?"} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             {flag && <div className={`flag ${flag.s === "S" ? "sc" : ""}`}>{flag.s === "S" ? "Safety car" : "Virtual safety car"}</div>}
           </div>
         </div>
+        <div className="corner-slot"><CornerTag corner={feed.current.corner} /></div>
         <div className="minimap" ref={stage}><canvas ref={canvas} role="img" aria-label={`${race.event} track map, lap ${leaderLap} of ${race.laps}`} /></div>
-        <div className="deck tower tower-float" aria-label="Timing tower" data-explain="tower">
-          <div className="deck-head" style={{ padding: "6px 8px 0" }}><span className="label">Timing tower</span><span className="meta">bar = P(box this lap)</span></div>
-          {states.map((st, i) => {
-            const lap = st.d.laps[st.lapIdx];
-            const p = st.done ? 0 : lap?.p ?? 0;
-            const pitting = Boolean(!st.done && lap?.pit && st.frac > 0.6);
-            const gap = st.out ? "OUT" : st.done ? (st.d.finished ? `P${st.d.rank}` : "–") : i === 0 ? "Leader"
-              : leader.done ? "last lap" : leader.D - st.D >= 1 ? `+${Math.floor(leader.D - st.D)}L` : `+${fmt((leader.D - st.D) * leader.lapDur, 1)}`;
-            return (
-              <button key={st.d.driver} className={`tower-row ${st.d.driver === sel ? "sel" : ""} ${lap?.call === 1 && !st.done ? "calling" : ""}`} onClick={() => { setSel(st.d.driver); emit("theatre:follow", st.d.driver); }}
-                aria-label={`P${i + 1} ${st.d.driver}, ${st.d.team}`} aria-pressed={st.d.driver === sel}>
-                <span className="pos">{i + 1}</span>
-                <span className="team" style={{ background: TEAM_COLOR[st.d.team] || "#888" }} />
-                <span className="code">{st.d.driver}</span>
-                <Tyre c={lap?.tyre || "?"} />
-                <span className="callbar"><i style={{ width: `${Math.round(p * 100)}%` }} /></span>
-                <span className="gap">{gap}</span>
-                {pitting && <span className="tag">PIT</span>}
-                {!pitting && lap?.call === 1 && !st.done && <span className="tag call">BOX?</span>}
-                {st.out && <span className="tag out">OUT</span>}
-              </button>
-            );
-          })}
-                </div>
+        {mode === "overview" && <ViewSphere view={view} track={track} feed={feed} pointAt={(f) => at(ttd(f))} />}
       </div>
-      <div className="deck timeline rv">
-        <button className="play" onClick={() => { if (T.current >= prep.maxT) T.current = 0; setPlaying(!playing); }} aria-label={playing ? "Pause" : "Play"}>
-          <Icon name={playing ? "pause" : "play"} fill />
-        </button>
-        <div className="mono" style={{ minWidth: 92, color: "var(--text-2)", fontSize: 13 }}>{`${Math.floor(tick / 60)}:${String(Math.floor(tick % 60)).padStart(2, "0")}`}<br /><span style={{ color: "var(--text-3)" }}>race clock</span></div>
-        <div className="scrub">
-          <div className="bands">{prep.spans.map((sp, i) => <i key={i} style={{ left: `${(sp.from / prep.maxT) * 100}%`, width: `${((sp.to - sp.from) / prep.maxT) * 100}%`, background: sp.s === "S" ? "#ff8a00" : "var(--yellow)", opacity: 0.6 }} />)}</div>
-          <input type="range" min={0} max={Math.round(prep.maxT)} value={Math.round(tick)} aria-label="Race time"
-            style={{ ["--fill" as any]: `${(tick / prep.maxT) * 100}%` }}
-            onChange={(e) => { T.current = +e.target.value; setTick(T.current); }} />
-          <div className="marks">
-            {stops.map((l) => <i key={"s" + l.lap} style={{ left: `${((l.t as number) / prep.maxT) * 100}%`, background: "var(--green)" }} title={`${selD.driver} stop lap ${l.lap}`} />)}
-            {calls.map((l) => <i key={"c" + l.lap} style={{ left: `${((l.t as number) / prep.maxT) * 100}%`, background: "var(--text)", opacity: 0.8 }} />)}
+      <div className="deck timeline rr rv">
+        <div className="transport">
+          <button className="rbtn" onClick={() => jumpLap(-1)} aria-label="Back one lap" title="Back one lap (←)"><Icon name="rew" fill /></button>
+          <button className="rbtn play" onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} title="Play / pause (space)"><Icon name={playing ? "pause" : "play"} fill /></button>
+          <button className="rbtn" onClick={() => jumpLap(1)} aria-label="Forward one lap" title="Forward one lap (→)"><Icon name="ffw" fill /></button>
+        </div>
+        <div className="clock mono"><b>LAP {leaderLap}/{race.laps}</b><span>{`${Math.floor(tick / 3600)}:${String(Math.floor((tick % 3600) / 60)).padStart(2, "0")}:${String(Math.floor(tick % 60)).padStart(2, "0")}`}</span></div>
+        <div className="lapbar" role="slider" tabIndex={0} aria-label="Race position" aria-valuemin={0} aria-valuemax={Math.round(prep.maxT)} aria-valuenow={Math.round(tick)}
+          aria-valuetext={`Lap ${leaderLap} of ${race.laps}`}
+          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); seekAt(e); }}
+          onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) seekAt(e); }}
+          onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); jumpLap(e.key === "ArrowLeft" ? -1 : 1); } }}>
+          <div className="lflags">{prep.spans.map((sp, i) => <i key={i} className={sp.s === "S" ? "sc" : "vsc"} style={{ left: pct(sp.from), width: pct(sp.to - sp.from) }} title={sp.s === "S" ? "Safety Car" : "VSC"} />)}</div>
+          <div className="lt">
+            <div className="lfill" style={{ width: pct(tick) }} />
+            {lapStarts.slice(1, -1).map((t, k) => <i key={k} className="tick" style={{ left: pct(t) }} />)}
+            {stops.map((l) => <i key={"s" + l.lap} className="stop" style={{ left: pct(l.t as number) }} title={`${selD.driver} pits, lap ${l.lap}`} />)}
+            <div className="lhead" style={{ left: pct(tick) }} />
           </div>
+          <div className="lnums">{lapStarts.slice(0, -1).map((t, k) => (k === 0 || (k + 1) % 10 === 0) ? <span key={k} style={{ left: pct(t) }}>{k + 1}</span> : null)}<span style={{ left: "100%" }}>{race.laps}</span></div>
         </div>
-        <div className="speed" role="group" aria-label="Playback speed">
-          {SPEEDS.map((s) => <button key={s} aria-pressed={speed === s} onClick={() => setSpeed(s)}>{s}×</button>)}
+        <div className="speedpill" role="group" aria-label="Playback speed">
+          <button onClick={() => stepSpeed(-1)} aria-label="Slower" disabled={speed === SPEEDS[0]}><Icon name="minus" /></button>
+          <label className="sp-v mono"><span>{speed}.0×</span>
+            <select value={speed} onChange={(e) => setSpeed(+e.target.value)} aria-label="Playback speed">{SPEEDS.map((v) => <option key={v} value={v}>{v}×</option>)}</select></label>
+          <button onClick={() => stepSpeed(1)} aria-label="Faster" disabled={speed === SPEEDS[SPEEDS.length - 1]}><Icon name="plus" /></button>
         </div>
+        <div className="toggles">
+          <button aria-pressed={labelsOn} onClick={() => setLabelsOn((v) => !v)} title="Driver labels (L)">Labels</button>
+          <button aria-pressed={drsOn} onClick={() => setDrsOn((v) => !v)} title="DRS zones on the map (D)">DRS</button>
+          <button className="rbtn sm" aria-expanded={keysOpen} onClick={() => setKeysOpen((v) => !v)} aria-label="Keyboard controls"><Icon name="keys" /></button>
+        </div>
+        <div className="legend-mini" aria-hidden="true"><span><i className="sc" />SC</span><span><i className="vsc" />VSC</span><span><i className="stop" />{selD.driver} stop</span></div>
+        {keysOpen && (
+          <div className="keys-pop" role="dialog" aria-label="Keyboard controls">
+            <b>Controls</b>
+            {[["Space", "Pause / resume"], ["← →", "Back / forward one lap"], ["↑ ↓", "Speed up / down"], ["1-4", "1×, 2×, 4×, 8×"],
+              ["R", "Restart"], ["L", "Driver labels"], ["D", "DRS zones"], ["G", "Leaderboard"], ["Esc", "Close menus"]].map(([k, v]) => <div key={k}><kbd>{k}</kbd><span>{v}</span></div>)}
+          </div>
+        )}
       </div>
       <div className="below">
         <LapChart driver={selD} lapNow={selState.d.laps[selState.lapIdx]?.lap ?? 1} raceLaps={race.laps} />
         <div className="deck rv" style={{ overflow: "hidden" }}>
-          <div className="deck-head" style={{ padding: "18px 18px 0" }}><span className="label">{selD.driver} · {selD.team}</span><span className="meta">click a car in the tower to follow it</span></div>
+          <div className="deck-head" style={{ padding: "18px 18px 0" }}><span className="label">{selD.driver} · {selD.team}</span><span className="meta">pick a driver from the leaderboard to follow</span></div>
           <dl className="facts" style={{ borderTop: "1px solid var(--hair)", marginTop: 12 }}>
             <div><dt>Finish</dt><dd>{selD.finished ? `P${selD.rank}` : selD.finish || "DNF"}</dd></div>
             <div><dt>Stops</dt><dd>{stops.map((l) => "L" + l.lap).join(" ") || "none"}</dd></div>

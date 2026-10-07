@@ -5,11 +5,15 @@ import * as THREE from "three";
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Grid, Html, OrbitControls } from "@react-three/drei";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Track, TEAM_COLOR } from "../data";
 import { CarModel, hasCar } from "./CarModel";
 import { Car } from "./Car";
 
 export type CarState = { code: string; team: string; frac: number; lapDur: number; visible: boolean; pitting: boolean; selected: boolean; ghost?: boolean };
+/* Shared Overview view state: the orbit camera and the view sphere both read and write it. */
+export type ViewCtl = { az: number; pol: number; dist: number; dirty: boolean; spin: boolean; reset: number };
+export const newView = (): ViewCtl => ({ az: 0.6, pol: 0.9, dist: 0, dirty: false, spin: false, reset: 0 });
 export type Corner = { n: number; apex: number; entry: number; exit: number; dir: 1 | -1; angle: number; vmin: number; gear: number; cam: THREE.Vector3 };
 export type Feed = { current: { cars: CarState[]; compound: string; speed?: number; sc?: boolean; brake?: number; corner?: Corner | null } };
 
@@ -81,7 +85,12 @@ export function useCircuit(track: Track) {
     const kerbCol = (i: number) => (curv[i] > 0.12 ? (Math.floor(i / 2) % 2 ? red : white) : null);
     const asphalt = strip(-WIDTH / 2, WIDTH / 2, 0);
     const kerbL = strip(WIDTH / 2, WIDTH / 2 + 1.6, 0.04, kerbCol), kerbR = strip(-WIDTH / 2 - 1.6, -WIDTH / 2, 0.04, kerbCol);
-    const lineL = strip(WIDTH / 2 - 0.35, WIDTH / 2 - 0.15, 0.03), lineR = strip(-WIDTH / 2 + 0.15, -WIDTH / 2 + 0.35, 0.03);
+    // edge lines turn green where DRS opens (zones pooled from the race's laps)
+    const drs = track.drs_zone, DN = drs?.length || 0;
+    const drsAt = (u: number) => (DN ? drs![Math.min(DN - 1, Math.round(wrap(u) * (DN - 1)))] === 1 : false);
+    const grey = new THREE.Color("#c4c4c8"), green = new THREE.Color("#22d65a");
+    const lineCol = (i: number) => (drsAt(i / N) ? green : grey);
+    const lineL = strip(WIDTH / 2 - 0.35, WIDTH / 2 - 0.15, 0.03, lineCol), lineR = strip(-WIDTH / 2 + 0.15, -WIDTH / 2 + 0.35, 0.03, lineCol);
     // speed profile: lap-time fraction -> distance fraction from the fastest lap's telemetry
     const tel: any = (track as any).tel;
     let timeToDist = (f: number) => wrap(f);
@@ -172,7 +181,7 @@ export function useCircuit(track: Track) {
     });
     else for (let k = 0, n = Math.max(8, Math.round(length / 350)); k < n; k++) filler(k / n, k);
     cams.sort((a, b) => a.u - b.u);
-    return { curve, length, asphalt, kerbL, kerbR, lineL, lineR, box, minY: box.min.y, timeToDist, speedAt, cams, tel, poseAt, curvAt, corners, cornerAt, nextCorner, straightLen };
+    return { curve, length, asphalt, kerbL, kerbR, lineL, lineR, box, minY: box.min.y, timeToDist, speedAt, cams, tel, poseAt, curvAt, corners, cornerAt, nextCorner, straightLen, drsAt };
   }, [track]);
 }
 export type Circuit = ReturnType<typeof useCircuit>;
@@ -180,11 +189,11 @@ export type Circuit = ReturnType<typeof useCircuit>;
 export function TrackMesh({ c }: { c: Circuit }) {
   return (
     <>
-      <mesh geometry={c.asphalt} receiveShadow><meshStandardMaterial color="#202229" roughness={0.86} metalness={0.1} side={THREE.DoubleSide} /></mesh>
+      <mesh geometry={c.asphalt} receiveShadow><meshStandardMaterial color="#121215" roughness={0.9} metalness={0.05} side={THREE.DoubleSide} /></mesh>
       <mesh geometry={c.kerbL}><meshStandardMaterial vertexColors roughness={0.6} side={THREE.DoubleSide} /></mesh>
       <mesh geometry={c.kerbR}><meshStandardMaterial vertexColors roughness={0.6} side={THREE.DoubleSide} /></mesh>
-      <mesh geometry={c.lineL}><meshBasicMaterial color="#e8e8ec" side={THREE.DoubleSide} /></mesh>
-      <mesh geometry={c.lineR}><meshBasicMaterial color="#e8e8ec" side={THREE.DoubleSide} /></mesh>
+      <mesh geometry={c.lineL}><meshBasicMaterial vertexColors side={THREE.DoubleSide} /></mesh>
+      <mesh geometry={c.lineR}><meshBasicMaterial vertexColors side={THREE.DoubleSide} /></mesh>
       <Gantry c={c} />
     </>
   );
@@ -208,6 +217,26 @@ function Gantry({ c }: { c: Circuit }) {
   );
 }
 
+/* A low-poly F1 silhouette for the field (x forward, metres): body parts take the team colour, wheels stay dark. */
+const podGeometry = (() => {
+  const parts: THREE.BufferGeometry[] = [];
+  const add = (g: THREE.BufferGeometry, x: number, y: number, z: number, shade: number) => {
+    g.translate(x, y, z);
+    const n = g.getAttribute("position").count, col = new Float32Array(n * 3).fill(shade);
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    parts.push(g.toNonIndexed());
+  };
+  add(new THREE.BoxGeometry(4.4, 0.42, 0.5), 0.35, 0.36, 0, 1);       // tub and nose
+  add(new THREE.BoxGeometry(1.9, 0.42, 1.5), -0.35, 0.34, 0, 1);      // sidepods
+  add(new THREE.BoxGeometry(1.7, 0.5, 0.52), -0.7, 0.78, 0, 1);       // engine cover and airbox
+  add(new THREE.BoxGeometry(0.4, 0.07, 1.95), 2.62, 0.12, 0, 1);      // front wing
+  add(new THREE.BoxGeometry(0.42, 0.36, 1.05), -2.45, 0.92, 0, 1);    // rear wing
+  for (const [x, z] of [[1.62, 0.82], [1.62, -0.82], [-1.62, 0.82], [-1.62, -0.82]]) {
+    const w = new THREE.CylinderGeometry(0.36, 0.36, 0.4, 14); w.rotateX(Math.PI / 2); add(w, x, 0.36, z, 0.07);
+  }
+  return mergeGeometries(parts)!;
+})();
+
 export function Pods({ feed, c }: { feed: Feed; c: Circuit }) {
   const mesh = useRef<THREE.InstancedMesh>(null!);
   const dummy = useMemo(() => new THREE.Object3D(), []);
@@ -219,20 +248,19 @@ export function Pods({ feed, c }: { feed: Feed; c: Circuit }) {
       if (!s || !s.visible || s.selected || s.ghost) { dummy.scale.setScalar(0); dummy.updateMatrix(); mesh.current.setMatrixAt(i, dummy.matrix); continue; }
       const u = c.timeToDist(s.frac), p = c.curve.getPointAt(u), pose = c.poseAt(u);
       const side = new THREE.Vector3(Math.sin(pose.yaw), 0, Math.cos(pose.yaw));
-      dummy.position.copy(p).addScaledVector(side, ((i % 5) - 2) * 1.5).setY(p.y + 0.5);
+      dummy.position.copy(p).addScaledVector(side, ((i % 5) - 2) * 1.5).setY(p.y + 0.02);
       setPose(dummy.quaternion, pose.yaw, pose.pitch);
-      dummy.scale.set(5.2, 0.5, 1.5);
+      dummy.scale.setScalar(1);
       dummy.updateMatrix();
       mesh.current.setMatrixAt(i, dummy.matrix);
-      mesh.current.setColorAt(i, color.set(s.pitting ? "#555" : TEAM_COLOR[s.team] || "#ccc").multiplyScalar(2));
+      mesh.current.setColorAt(i, color.set(s.pitting ? "#555" : TEAM_COLOR[s.team] || "#ccc"));
     }
     mesh.current.instanceMatrix.needsUpdate = true;
     if (mesh.current.instanceColor) mesh.current.instanceColor.needsUpdate = true;
   });
   return (
-    <instancedMesh ref={mesh} args={[undefined as any, undefined as any, 24]}>
-      <capsuleGeometry args={[0.5, 1, 4, 12]} />
-      <meshBasicMaterial toneMapped={false} />
+    <instancedMesh ref={mesh} args={[podGeometry, undefined as any, 24]} castShadow>
+      <meshStandardMaterial vertexColors roughness={0.45} metalness={0.25} emissive="#111111" />
     </instancedMesh>
   );
 }
@@ -278,7 +306,10 @@ export function FollowCar({ feed, c, livery, accent, pick, ghost = false, label 
  *  director cuts like a TV feed: corner camera through each turning point, then chase, side-tracking or
  *           aerial shots on the straights (at 8x and above it holds chase/aerial, cuts would strobe) */
 const lens = (dist: number) => THREE.MathUtils.clamp((2 * Math.atan(7.5 / Math.max(dist, 1)) * 180) / Math.PI, 4.5, 38);
-export function Cameras({ feed, c, mode, pick }: { feed: Feed; c: Circuit; mode: string; pick: (cars: CarState[]) => CarState | undefined }) {
+export function Cameras({ feed, c, mode, pick, view }: { feed: Feed; c: Circuit; mode: string; pick: (cars: CarState[]) => CarState | undefined; view?: ViewCtl }) {
+  const ctl = useRef<any>(null);
+  const sph = useMemo(() => new THREE.Spherical(), []);
+  const lastReset = useRef(view?.reset ?? 0);
   const { camera } = useThree() as unknown as { camera: THREE.PerspectiveCamera };
   const baseFov = useRef(camera.fov);
   const pos = useRef(new THREE.Vector3()), look = useRef(new THREE.Vector3());
@@ -296,7 +327,31 @@ export function Cameras({ feed, c, mode, pick }: { feed: Feed; c: Circuit; mode:
     const u = c.timeToDist(s.frac), p = c.curve.getPointAt(u);
     const ci = c.cornerAt(u);
     feed.current.corner = ci >= 0 ? c.corners[ci] : null;
-    if (mode === "overview") return;
+    if (mode === "overview") {
+      // two-way link with the view sphere: it writes az/pol/dist and sets dirty; manual orbiting is mirrored back
+      const oc = ctl.current;
+      if (!view || !oc) return;
+      const ctr = oc.target as THREE.Vector3;
+      if (view.reset !== lastReset.current) {
+        lastReset.current = view.reset;
+        const size = c.box.getSize(tmp);
+        Object.assign(view, { az: 0.18, pol: 0.92, dist: Math.max(size.x, size.z) * 0.95, dirty: true, spin: false });
+      }
+      if (view.dirty) {
+        view.pol = Math.min(1.35, Math.max(0.04, view.pol));
+        view.dist = Math.min(4000, Math.max(200, view.dist || 1200));
+        sph.set(view.dist, view.pol, view.az);
+        camera.position.setFromSpherical(sph).add(ctr);
+        oc.update();
+        view.dirty = false;
+      } else {
+        sph.setFromVector3(tmp.copy(camera.position).sub(ctr));
+        view.az = sph.theta; view.pol = sph.phi; view.dist = sph.radius;
+      }
+      oc.autoRotate = view.spin;
+      oc.autoRotateSpeed = 0.6;
+      return;
+    }
     const play = Math.max(1, feed.current.speed ?? 1);
     const h = heading(c.poseAt(u), dt, play);
     fwd.set(Math.cos(h.yaw), 0, -Math.sin(h.yaw));
@@ -349,23 +404,61 @@ export function Cameras({ feed, c, mode, pick }: { feed: Feed; c: Circuit; mode:
     camera.position.copy(pos.current);
     camera.lookAt(look.current);
   });
-  return mode === "overview" ? <OrbitControls makeDefault target={c.box.getCenter(new THREE.Vector3())} maxPolarAngle={1.35} minDistance={200} maxDistance={4000} /> : null;
+  return mode === "overview" ? <OrbitControls ref={ctl} makeDefault target={c.box.getCenter(new THREE.Vector3())} maxPolarAngle={1.35} minDistance={200} maxDistance={4000} enableDamping dampingFactor={0.08} /> : null;
 }
 
 export function Atmosphere({ c, far = false }: { c: Circuit; far?: boolean }) {
   return (
     <>
-      <color attach="background" args={["#07070b"]} />
-      <fog attach="fog" args={["#07070b", far ? 2500 : 160, far ? 6000 : 1100]} />
+      <color attach="background" args={["#000000"]} />
+      <fog attach="fog" args={["#000000", far ? 2500 : 160, far ? 6000 : 1100]} />
       <hemisphereLight args={["#e9edf5", "#060609", 0.55]} />
       <directionalLight position={[300, 500, 200]} intensity={1.5} />
-      <Grid position={[0, c.minY - 0.6, 0]} args={[20000, 20000]} cellSize={25} cellThickness={0.6} cellColor="#16161d" sectionSize={250}
-        sectionThickness={1.1} sectionColor="#3a1414" fadeDistance={far ? 6000 : 800} fadeStrength={1.4} infiniteGrid />
+      <Grid position={[0, c.minY - 0.6, 0]} args={[20000, 20000]} cellSize={25} cellThickness={0.6} cellColor="#0e0e11" sectionSize={250}
+        sectionThickness={1.1} sectionColor="#1d1d23" fadeDistance={far ? 6000 : 800} fadeStrength={1.4} infiniteGrid />
     </>
   );
 }
 
-export function CircuitScene({ track, feed, mode, livery }: { track: Track; feed: Feed; mode: string; livery: string }) {
+/* Driver codes over the cars, in team colours (Overview / Heli): one DOM layer, positions projected each frame. */
+export function CarLabels({ feed, c, host, on }: { feed: Feed; c: Circuit; host: React.RefObject<HTMLDivElement | null>; on: boolean }) {
+  const { camera, size } = useThree();
+  const v = useMemo(() => new THREE.Vector3(), []);
+  const nodes = useRef<HTMLDivElement[]>([]);
+  useEffect(() => {
+    const h = host.current;
+    if (!h) return;
+    nodes.current = Array.from({ length: 24 }, () => { const d = document.createElement("div"); d.className = "clabel"; h.appendChild(d); return d; });
+    return () => { nodes.current.forEach((d) => d.remove()); nodes.current = []; };
+  }, [host]);
+  const placed = useMemo(() => [] as number[][], []);
+  useFrame(() => {
+    const cars = feed.current.cars;
+    // declutter: the followed car first, then the cars furthest round the lap; a label that would overlap is hidden
+    const order = cars.map((_, i) => i).sort((a, b) => Number(cars[b].selected) - Number(cars[a].selected) || cars[b].frac - cars[a].frac);
+    placed.length = 0;
+    nodes.current.forEach((el) => (el.style.display = "none"));
+    for (const i of order) {
+      const s = cars[i], el = nodes.current[i];
+      if (!el || !on || !s || !s.visible) continue;
+      const p = c.curve.getPointAt(c.timeToDist(s.frac));
+      v.set(p.x, p.y + 6, p.z).project(camera);
+      if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue;
+      const x = ((v.x + 1) / 2) * size.width, y = ((1 - v.y) / 2) * size.height;
+      if (placed.some(([px, py]) => Math.abs(px - x) < 40 && Math.abs(py - y) < 18)) continue;
+      placed.push([x, y]);
+      el.style.display = "block";
+      el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      if (el.textContent !== s.code) el.textContent = s.code;
+      el.style.setProperty("--team", TEAM_COLOR[s.team] || "#ccc");
+      el.classList.toggle("sel", s.selected);
+    }
+  });
+  return null;
+}
+
+export function CircuitScene({ track, feed, mode, livery, view, labels }: { track: Track; feed: Feed; mode: string; livery: string; view?: ViewCtl;
+  labels?: { host: React.RefObject<HTMLDivElement | null>; on: boolean } }) {
   const c = useCircuit(track);
   const { camera } = useThree();
   useMemo(() => {
@@ -381,7 +474,8 @@ export function CircuitScene({ track, feed, mode, livery }: { track: Track; feed
       <TrackMesh c={c} />
       <Pods feed={feed} c={c} />
       <FollowCar feed={feed} c={c} livery={livery} pick={sel} />
-      <Cameras feed={feed} c={c} mode={mode} pick={sel} />
+      <Cameras feed={feed} c={c} mode={mode} pick={sel} view={view} />
+      {labels && <CarLabels feed={feed} c={c} host={labels.host} on={labels.on && (mode === "overview" || mode === "heli")} />}
     </>
   );
 }

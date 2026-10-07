@@ -40,13 +40,13 @@ export const STEPS: Step[] = [
     task: { event: "wall:compound", value: "HARD", text: { rookie: "Put hard tyres on the car.", fan: "Fit the hards.", engineer: "Set compound = HARD." } },
   },
   {
-    id: "tower", view: "theatre", target: ".tower-float", title: "Every 2025 race, replayed",
+    id: "tower", view: "theatre", target: ".lb", title: "Every 2025 race, replayed",
     body: {
-      rookie: "Real cars, real timing. This list is the running order. The bar next to each driver is how strongly the model expects that team to pit this lap.",
-      fan: "A live timing tower with the model's P(box) for each car against the stops they actually made. Watch the bars rise before a stop.",
+      rookie: "Real cars, real timing. Open the leaderboard for the running order. The red bar next to each driver is how strongly the model expects that team to pit this lap.",
+      fan: "A live leaderboard with the model's P(box) for each car against the stops they actually made. Watch the bars rise before a stop.",
       engineer: "Each bar is the pit-call classifier's probability (ROC-AUC 0.876 on 2025), computed only from information available before the lap.",
     },
-    task: { event: "theatre:follow", text: { rookie: "Click any driver in the list to ride with them.", fan: "Pick a driver to follow.", engineer: "Select a driver to follow." } },
+    task: { event: "theatre:follow", text: { rookie: "Open the leaderboard and pick a driver to ride with.", fan: "Pick a driver from the leaderboard.", engineer: "Select a driver from the leaderboard." } },
   },
   {
     id: "cams", view: "theatre", target: ".modes", title: "Pick your shot",
@@ -91,7 +91,7 @@ export const EXPLAIN: Record<string, { title: string } & Depth> = {
   strip: { title: "Strategy from here", rookie: "The rest of the race: each coloured block is a set of tyres, and the red lines are the pit stops.", fan: "The optimal plan, following the policy assuming green running.", engineer: "Forward roll-out of the optimal policy with track state fixed to green." },
   window: { title: "Pit window", rookie: "How much time you'd lose by stopping on each lap instead of the best lap. Purple is the best lap.", fan: "Cost of committing to each stop lap. Purple is optimal, green within 0.5 s.", engineer: "Committed-stop values under green running; it ignores SC option value, which is why the plan can stop later." },
   garage: { title: "The car", rookie: "A real F1 car model, painted in Pitwall colours. Tyre rings show the compound.", fan: "Drag to rotate, and tap the numbered hotspots.", engineer: "CC-BY-NC Ferrari F1-75 mesh, 284k triangles after simplification, de-branded, with a livery shader in car space." },
-  tower: { title: "Timing tower", rookie: "The running order. Bars show how likely each car is to pit this lap.", fan: "P(box) per car, BOX? when the model calls it, PIT when they actually pit.", engineer: "Pit-call classifier probabilities with leak-free features from lap n-1." },
+  tower: { title: "Leaderboard", rookie: "The running order. Bars show how likely each car is to pit this lap.", fan: "P(box) per car, PIT when they actually pit; the card on the left follows your driver.", engineer: "Pit-call classifier probabilities with leak-free features from lap n-1." },
   hud: { title: "Driver HUD", rookie: "Speed, gear, throttle (green) and brake (red).", fan: "Rev lights, DRS and live telemetry from the real lap.", engineer: "FastF1 car_data merged with position data, resampled by distance." },
   traces: { title: "Telemetry traces", rookie: "The whole lap as graphs: speed dips are corners, red is braking.", fan: "Speed, throttle/brake and gear on one distance axis. Hover anywhere.", engineer: "Small multiples sharing x; no dual axes." },
   onboard: { title: "Onboard", rookie: "Ride along the fastest lap.", fan: "T-cam, chase or trackside TV.", engineer: "Speed-profile-mapped motion on a smoothed CatmullRom centreline with true elevation." },

@@ -105,7 +105,7 @@ export default function App() {
             </Suspense>
           </main>
           <footer>
-            <span>Pitwall v2.4 · Arnav Yadav · FastF1 timing and telemetry 2021-2025 · fitted 2021-23, tuned 2024, tested once on 2025</span>
+            <span>Pitwall v2.5 · Arnav Yadav · FastF1 timing and telemetry 2021-2025 · fitted 2021-23, tuned 2024, tested once on 2025</span>
             <span>Not affiliated with Formula 1 · car model "Ferrari F1-75" by Sketcher (CC-BY-NC-4.0), de-branded · frontend built with Claude Code</span>
           </footer>
           <Guide go={go} view={view} explain={explain} setExplain={setExplain} />

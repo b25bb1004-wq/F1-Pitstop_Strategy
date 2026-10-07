@@ -37,6 +37,29 @@ def resample(xy, n, z=None):
     return out, seg[-1], zr
 
 
+def drs_zone(s, n_laps=60):
+    """Where DRS opens on this circuit: share of sampled green racing laps with DRS open, per distance fraction.
+    The fastest lap is usually driven in clean air with DRS shut, so it cannot show the zones on its own."""
+    laps = s.laps
+    laps = laps[(laps["LapNumber"] > 3) & laps["PitInTime"].isna() & laps["PitOutTime"].isna() & (laps["TrackStatus"].astype(str) == "1")]
+    if len(laps) == 0:
+        return [0] * N_POINTS
+    step = max(1, len(laps) // n_laps)
+    grid = np.linspace(0, 1, N_POINTS)
+    acc, used = np.zeros(N_POINTS), 0
+    for _, lap in laps.iloc[::step].iterrows():
+        try:
+            cd = lap.get_car_data().add_distance()
+        except Exception:
+            continue
+        d = cd["Distance"].to_numpy(float)
+        if len(d) < 20 or d[-1] <= 0:
+            continue
+        acc += np.interp(grid, d / d[-1], (cd["DRS"].to_numpy(float) >= 10).astype(float))
+        used += 1
+    return (acc / max(used, 1) >= 0.2).astype(int).tolist()
+
+
 def outline(year, rnd):
     s = fastf1.get_session(year, rnd, "R")
     s.load(laps=True, telemetry=True, weather=False, messages=False)
@@ -81,7 +104,7 @@ def outline(year, rnd):
         "drs": (ch("DRS") >= 10).astype(int).tolist(),
         "t": np.round(np.interp(grid, f, secs - secs[0]), 3).tolist(),
     }
-    out = {"points": norm(pts).tolist(), "aspect": float((hi - lo)[1] / (hi - lo)[0]), "tel": telemetry,
+    out = {"points": norm(pts).tolist(), "aspect": float((hi - lo)[1] / (hi - lo)[0]), "tel": telemetry, "drs_zone": drs_zone(s),
            "length_m": round(length / 10, 0), "race": f"{year}_{rnd:02d}",
            # FastF1 positions are in 1/10 m: one normalised unit is scale/10 metres
            "scale_m": round(float(scale) / 10, 1),
