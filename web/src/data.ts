@@ -12,9 +12,23 @@ export type Race = { race_id: string; event: string; circuit: string; laps: numb
 export type Track = { points: [number, number][]; aspect: number; length_m: number; race: string; scale_m: number; z: number[]; drs_zone?: number[] };
 export type Data = { model: any; metrics: any; tracks: Record<string, Track>; races: Race[] };
 
+/* Run a download up to three times (0.5 s, 1.5 s backoff); retries skip any cached copy. A dropped connection can fail
+ * the fetch or the streamed read, so both are inside the retry. */
+export async function withRetry<T>(label: string, job: (attempt: number) => Promise<T>, tries = 3): Promise<T> {
+  let last: any;
+  for (let i = 0; i < tries; i++) {
+    try { return await job(i); } catch (e) { last = e; if (i < tries - 1) await new Promise((r) => setTimeout(r, 500 * 3 ** i)); }
+  }
+  throw new Error(`${label} could not be downloaded (${last?.message || last}). Check the connection and retry.`);
+}
+export const fetchFresh = (url: string, attempt: number) => fetch(url, attempt ? { cache: "reload" } : undefined);
+
 async function fetchJson(name: string, onProgress: (f: number) => void) {
-  const res = await fetch(BASE + name);
-  if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+  return withRetry(name, (attempt) => fetchJsonOnce(name, onProgress, attempt));
+}
+async function fetchJsonOnce(name: string, onProgress: (f: number) => void, attempt: number) {
+  const res = await fetchFresh(BASE + name, attempt);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const total = Number(res.headers.get("content-length")) || 0;
   if (!res.body || !total) { const j = await res.json(); onProgress(1); return j; }
   const reader = res.body.getReader();

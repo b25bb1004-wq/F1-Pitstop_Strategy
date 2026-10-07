@@ -6,14 +6,23 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import { TYRE_COLOR } from "../data";
+import { TYRE_COLOR, withRetry } from "../data";
 
 let asset: any = null;
 export const CAR_URL = import.meta.env.BASE_URL + "models/f1.glb";
 export const hasCar = () => !!asset;
 
 export async function loadCar(onProgress: (f: number) => void) {
-  const res = await fetch(CAR_URL);
+  const buf = await withRetry("The car model", (attempt) => downloadCar(onProgress, attempt));
+  const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  asset = await loader.parseAsync(buf, "");
+  onProgress(1);
+  return asset;
+}
+async function downloadCar(onProgress: (f: number) => void, attempt: number): Promise<ArrayBuffer> {
+  const res = await fetch(CAR_URL, attempt ? { cache: "reload" } : undefined);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const total = Number(res.headers.get("content-length")) || 0;
   let buf: ArrayBuffer;
   if (res.body && total) {
@@ -23,11 +32,7 @@ export async function loadCar(onProgress: (f: number) => void) {
     for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; onProgress(Math.min(got / total, 0.97)); }
     buf = await new Blob(parts as BlobPart[]).arrayBuffer();
   } else buf = await res.arrayBuffer();
-  const loader = new GLTFLoader();
-  loader.setMeshoptDecoder(MeshoptDecoder);
-  asset = await loader.parseAsync(buf, "");
-  onProgress(1);
-  return asset;
+  return buf;
 }
 
 type Ref<T> = { current: T };
